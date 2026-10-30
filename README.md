@@ -1,3 +1,5 @@
+> **Linux SPARC64 port:** see [README.sparc64.md](README.sparc64.md) for the source build, Gentoo ebuild and current limitations.
+
 # Node.js
 
 Node.js is an open-source, cross-platform JavaScript runtime environment.
