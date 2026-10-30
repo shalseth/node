@@ -212,6 +212,11 @@ class V8_EXPORT_PRIVATE JumpTableAssembler {
 #endif
   static constexpr int kFarJumpTableSlotSize = 4 * kInstrSize;
   static constexpr int kLazyCompileTableSlotSize = 4 * kInstrSize;
+#elif V8_TARGET_ARCH_SPARC64
+  static constexpr int kJumpTableLineSize = 16;
+  static constexpr int kJumpTableSlotSize = 16;
+  static constexpr int kFarJumpTableSlotSize = 32;
+  static constexpr int kLazyCompileTableSlotSize = 32;
 #elif V8_TARGET_ARCH_S390X
   static constexpr int kJumpTableLineSize = 128;
   static constexpr int kJumpTableSlotSize = 8;

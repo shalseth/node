@@ -21,6 +21,7 @@
 
 #include <atomic>
 
+#include "src/base/memory.h"
 #include "src/base/numbers/double.h"
 #include "src/bigint/bigint.h"
 #include "src/execution/isolate-inl.h"
@@ -1236,11 +1237,11 @@ void BigInt::SerializeDigits(uint8_t* storage, size_t storage_length) {
 #if defined(V8_TARGET_LITTLE_ENDIAN)
   memcpy(storage, raw_digits(), num_digits_to_write * kDigitSize);
 #elif defined(V8_TARGET_BIG_ENDIAN)
-  digit_t* digit_storage = reinterpret_cast<digit_t*>(storage);
   const digit_t* digit = reinterpret_cast<const digit_t*>(raw_digits());
   for (size_t i = 0; i < num_digits_to_write; i++) {
-    *digit_storage = ByteReverse(*digit);
-    digit_storage++;
+    base::WriteUnalignedValue<digit_t>(reinterpret_cast<Address>(storage),
+                                       ByteReverse(*digit));
+    storage += kDigitSize;
     digit++;
   }
 #endif  // V8_TARGET_BIG_ENDIAN
@@ -1268,11 +1269,11 @@ MaybeDirectHandle<BigInt> BigInt::FromSerializedDigits(
   memset(padding_start, 0, length * kDigitSize - bytelength);
 #elif defined(V8_TARGET_BIG_ENDIAN)
   digit_t* digit = reinterpret_cast<digit_t*>(digits);
-  const digit_t* digit_storage =
-      reinterpret_cast<const digit_t*>(digits_storage.begin());
+  const uint8_t* digit_storage = digits_storage.begin();
   for (uint32_t i = 0; i < bytelength / kDigitSize; i++) {
-    *digit = ByteReverse(*digit_storage);
-    digit_storage++;
+    *digit = ByteReverse(base::ReadUnalignedValue<digit_t>(
+        reinterpret_cast<Address>(digit_storage)));
+    digit_storage += kDigitSize;
     digit++;
   }
   if (bytelength % kDigitSize) {

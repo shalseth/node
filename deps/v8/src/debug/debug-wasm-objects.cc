@@ -4,6 +4,7 @@
 
 #include "src/debug/debug-wasm-objects.h"
 
+#include <algorithm>
 #include <optional>
 
 #include "src/api/api-inl.h"
@@ -846,6 +847,10 @@ DirectHandle<String> WasmSimd128ToString(Isolate* isolate, Simd128 s128) {
   // https://github.com/WebAssembly/simd/blob/master/proposals/simd/TextSIMD.md
   base::EmbeddedVector<char, 50> buffer;
   auto i32x4 = s128.to_i32x4();
+#if V8_TARGET_ARCH_SPARC64
+  // Native SIMD spills place the most significant lane first.
+  std::reverse(i32x4.begin(), i32x4.end());
+#endif
   SNPrintF(buffer, "i32x4 0x%08X 0x%08X 0x%08X 0x%08X", i32x4[0], i32x4[1],
            i32x4[2], i32x4[3]);
   return isolate->factory()->NewStringFromAsciiChecked(buffer.data());

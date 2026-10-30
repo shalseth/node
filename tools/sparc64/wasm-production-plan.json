@@ -1,0 +1,48 @@
+{
+  "objective": "Complete production Wasm support for SPARC64 Node.js: SIMD, the Wasm GC proposal, optimizing compilation, JS/Wasm inlining and wrappers, and general Wasm debugging and tiering. Pass the relevant unchanged upstream tests on T7 while preserving all existing Node, JavaScript JIT, Wasm and application regressions",
+  "parent_checkpoint": "node-jspi-20261029T174932.476777Z",
+  "milestones": [
+    {
+      "name": "SIMD native code generation, ABI and application acceptance",
+      "status": "validated",
+      "validation_report": "out/sparc64-wasm-production-audit.json"
+    },
+    {
+      "name": "Wasm GC types, allocation, barriers and collection",
+      "status": "validated",
+      "validation_report": "out/sparc64-wasm-production-audit.json"
+    },
+    {
+      "name": "Optimizing Wasm compiler, tier transitions and native-tier proof",
+      "status": "validated",
+      "validation_report": "out/sparc64-wasm-production-audit.json"
+    },
+    {
+      "name": "Optimized JS/Wasm wrappers and inlining with GC/JSPI/deoptimization",
+      "status": "validated",
+      "validation_report": "out/sparc64-wasm-production-audit.json"
+    },
+    {
+      "name": "Wasm debugger breakpoints, stepping, scopes and tiering",
+      "status": "validated",
+      "validation_report": "out/sparc64-wasm-production-audit.json"
+    }
+  ],
+  "required_final_gates": [
+    "unchanged upstream supported-feature tests for all five milestones",
+    "combined SIMD/GC/optimized/JSPI/debugger stress",
+    "preserved full Node/JIT/Wasm/atomics/scalar/snapshot/RegExp/application gates",
+    "verified checkpoints and immutable parent verification"
+  ],
+  "outside_scope": [
+    "WasmFX",
+    "experimental growable stacks"
+  ],
+  "policy": "No milestone is complete from a partial test selection; missing production paths remain open. No upstream publication without human review.",
+  "upstream_fixture_limitation": "instance-gc writes host-endian Int32Array into little-endian Wasm memory; original failure retained and separate explicit-LE copy passes all three modes",
+  "completion_evidence": {
+    "audit": "out/sparc64-wasm-production-audit.json",
+    "checkpoint": "out/sparc64-wasm-production-checkpoint-path.txt",
+    "verification": "tools/sparc64/verify-checkpoint.py must pass on both native and local copies"
+  }
+}

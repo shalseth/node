@@ -14,8 +14,8 @@
 #include "src/utils/utils.h"
 #endif
 
-#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64
-// No simulator for ia32 or x64.
+#if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_SPARC64
+// Native execution only on these architectures.
 #elif V8_TARGET_ARCH_ARM64
 #include "src/execution/arm64/simulator-arm64.h"
 #elif V8_TARGET_ARCH_ARM

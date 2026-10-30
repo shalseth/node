@@ -1160,16 +1160,20 @@ FrameDescription* Deoptimizer::DoComputeWasmLiftoffFrame(
               output_frame->SetDoubleRegister(liftoff_iter->reg().fp().code(),
                                               value.double_value());
               break;
-            case TranslatedValue::Kind::kFloat:
+            case TranslatedValue::Kind::kFloat: {
               // Liftoff doesn't have a concept of floating point registers.
               // This is an important distinction as e.g. on arm s1 and d1 are
               // two completely distinct registers.
               static_assert(std::is_same_v<decltype(liftoff_iter->reg().fp()),
                                            DoubleRegister>);
-              output_frame->SetDoubleRegister(
-                  liftoff_iter->reg().fp().code(),
-                  Float64::FromBits(value.float_value().get_bits()));
+              uint64_t bits = value.float_value().get_bits();
+#if V8_TARGET_ARCH_SPARC64
+              bits <<= 32;
+#endif
+              output_frame->SetDoubleRegister(liftoff_iter->reg().fp().code(),
+                                              Float64::FromBits(bits));
               break;
+            }
             case TranslatedValue::Kind::kSimd128:
               output_frame->SetSimd128Register(liftoff_iter->reg().fp().code(),
                                                value.simd_value());

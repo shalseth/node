@@ -1,0 +1,84 @@
+{
+  "copies": [
+    {
+      "source": "tools/sparc64/apps-typescript",
+      "destination": "typescript",
+      "source_sha256": null
+    },
+    {
+      "source": "tools/sparc64/test-temporal-application.cjs",
+      "destination": "temporal.cjs",
+      "source_sha256": "36eeb0e3d136beda5d72137dde7eb84e682cee5e9e3b611c67052e0b17221a0c"
+    },
+    {
+      "source": "tools/sparc64/test-wasm-node-apis.cjs",
+      "destination": "node-apis.cjs",
+      "source_sha256": "09881ddbe101c7f7e9990b09892fa1e8e92b352d0fd128d118e3996b78da367e"
+    },
+    {
+      "source": "tools/sparc64/test-ffi-fast-native.cjs",
+      "destination": "ffi-fast.cjs",
+      "source_sha256": "acd595658465986e5d7f3277dd5d7e241db49dc2f3d64434da072ca940dd6ec4"
+    },
+    {
+      "source": "tools/sparc64/ffi-call-oracle.c",
+      "destination": "ffi-call-oracle.c",
+      "source_sha256": "bbbbe6c18311ffe2c1ca925c5428bce67bfedcdbc9dc3676032c54cc8f85adef"
+    },
+    {
+      "source": "tools/sparc64/apps/package.json",
+      "destination": "apps/package.json",
+      "source_sha256": "46ebf7ee75c716c99e6128200e4439d07c230c71383229aaaded5bce7c24d5f1"
+    },
+    {
+      "source": "tools/sparc64/apps/package-lock.json",
+      "destination": "apps/package-lock.json",
+      "source_sha256": "85004708475164d5be19c41720e4f6a78459302cbcdac2b63f10cd7648df948a"
+    },
+    {
+      "source": "tools/sparc64/apps/express-websocket.cjs",
+      "destination": "apps/express-websocket.cjs",
+      "source_sha256": "002a06f5cd82cd6b8c0559083682f324df469137adb3820216122a18f4d20800"
+    },
+    {
+      "source": "tools/sparc64/apps/turbofan-soak.cjs",
+      "destination": "apps/turbofan-soak.cjs",
+      "source_sha256": "5f9dd8cf2154a15abb12327523135e77d4c9c68db0348c0b83f3bbc79b4502a5"
+    },
+    {
+      "source": "tools/sparc64/test-wasm-simd.cjs",
+      "destination": "wasm-simd.cjs",
+      "source_sha256": "0045ec0376f5a46c3dd7416ddc65c35dcdb1b3128f5a07e40a0dfebde9e3cfb5"
+    },
+    {
+      "source": "tools/sparc64/test-wasm-simd-undici.cjs",
+      "destination": "wasm-undici.cjs",
+      "source_sha256": "4b32a7a1b467d3a91482cf62d6f10228707a3a2d8ce62eed61cfc427f25259f0"
+    },
+    {
+      "source": "deps/v8/test/mjsunit/wasm/wasm-module-builder.js",
+      "destination": "wasm-module-builder.js",
+      "source_sha256": "4b38ad3503c1163ca524162c2825dfa4f106e58ce0983a9e78b734f7e107000f"
+    },
+    {
+      "source": "deps/undici/src/lib/llhttp/llhttp_simd-wasm.js",
+      "destination": "llhttp-simd-wasm.cjs",
+      "source_sha256": "a3f30f3307ab3c191720cb636d570febb3610c420bc7077f2e225dacfcad3295"
+    },
+    {
+      "source": "tools/sparc64/test-snapshot-regexp-flags.cjs",
+      "destination": "regexp-native.cjs",
+      "source_sha256": "328d287592ba7df84d15107d56daed22eaa84fcdd738d9720231a9a2522f7ec2"
+    },
+    {
+      "source": "tools/sparc64/snapshot-array-buffer-keys.cjs",
+      "destination": "snapshot-keys.cjs",
+      "source_sha256": "6c8096f1be29594832d416e35564872d0ad4e6441847c86fc399091294161068"
+    }
+  ],
+  "adaptations": [
+    "Wasm fixtures load bundled builder/llhttp bytes using package-relative paths",
+    "Soak retains eight 15-second epochs and all correctness/optimization/memory checks; removes minimum request quota for bounded T4 runtime",
+    "Native FFI oracle retains parent fast-call functions and adds allocation, byte checksum and callback entry points for installed integration checks"
+  ]
+}

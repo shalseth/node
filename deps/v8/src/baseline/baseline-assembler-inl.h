@@ -27,6 +27,8 @@
 #include "src/baseline/arm/baseline-assembler-arm-inl.h"
 #elif V8_TARGET_ARCH_PPC64
 #include "src/baseline/ppc/baseline-assembler-ppc-inl.h"
+#elif V8_TARGET_ARCH_SPARC64
+#include "src/baseline/sparc64/baseline-assembler-sparc64-inl.h"
 #elif V8_TARGET_ARCH_S390X
 #include "src/baseline/s390/baseline-assembler-s390-inl.h"
 #elif V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_RISCV64

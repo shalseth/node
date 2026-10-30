@@ -1925,7 +1925,7 @@ void InstructionSelector::VisitWord32AtomicPairCompareExchange(OpIndex node) {
 
 #if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_MIPS64 && \
     !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_PPC64 &&                         \
-    !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_LOONG64
+    !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_LOONG64 && !V8_TARGET_ARCH_SPARC64
 
 VISIT_UNSUPPORTED_OP(Word64AtomicLoad)
 VISIT_UNSUPPORTED_OP(Word64AtomicStore)
@@ -1939,7 +1939,8 @@ VISIT_UNSUPPORTED_OP(Word64AtomicCompareExchange)
 
 #endif  // !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_ARM64 && !V8_TARGET_ARCH_PPC64
         // !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_S390X &&
-        // !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_LOONG64
+        // !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_LOONG64 &&
+        // !V8_TARGET_ARCH_SPARC64
 
 #if !V8_TARGET_ARCH_IA32 && !V8_TARGET_ARCH_ARM && !V8_TARGET_ARCH_RISCV32
 // This is only needed on 32-bit to split the 64-bit value into two operands.
@@ -1951,7 +1952,7 @@ IF_WASM(VISIT_UNSUPPORTED_OP, I64x2ReplaceLaneI32Pair)
 #if !V8_TARGET_ARCH_X64 && !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_PPC64
 #if !V8_TARGET_ARCH_ARM64
 #if !V8_TARGET_ARCH_MIPS64 && !V8_TARGET_ARCH_LOONG64 && \
-    !V8_TARGET_ARCH_RISCV32 && !V8_TARGET_ARCH_RISCV64
+    !V8_TARGET_ARCH_RISCV32 && !V8_TARGET_ARCH_RISCV64 && !V8_TARGET_ARCH_SPARC64
 
 IF_WASM(VISIT_UNSUPPORTED_OP, I64x2Splat)
 IF_WASM(VISIT_UNSUPPORTED_OP, I64x2ExtractLane)
@@ -2284,6 +2285,36 @@ void InstructionSelector::VisitCall(
       if (!call_descriptor->NoFunctionDescriptor()) {
         fp_param_count |= 1 << kHasFunctionDescriptorBitShift;
       }
+#endif
+#if V8_TARGET_ARCH_SPARC64
+      // The SPARC C ABI requires narrow integer arguments extended to 64 bits.
+      uint32_t extensions = 0;
+      for (size_t index = 1; index < call_descriptor->InputCount(); ++index) {
+        LinkageLocation location = call_descriptor->GetInputLocation(index);
+        if (!location.IsRegister()) continue;
+        MachineType type = location.GetType();
+        unsigned extension;
+        switch (type.representation()) {
+          case MachineRepresentation::kWord8:
+            extension = 1;
+            break;
+          case MachineRepresentation::kWord16:
+            extension = 3;
+            break;
+          case MachineRepresentation::kWord32:
+            extension = 5;
+            break;
+          default:
+            continue;
+        }
+        if (!type.IsSigned() && !type.IsUnsigned()) continue;
+        if (type.IsUnsigned()) ++extension;
+        int slot = location.AsRegister() - o0.code();
+        CHECK_GE(slot, 0);
+        CHECK_LT(slot, 6);
+        extensions |= extension << (slot * 3);
+      }
+      buffer.instruction_args.push_back(g.UseImmediate(extensions));
 #endif
       // We store the param counts as a separate input because they need too
       // many bits to be encoded in the opcode.

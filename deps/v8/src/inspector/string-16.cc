@@ -13,6 +13,7 @@
 #include <string>
 
 #include "../../third_party/inspector_protocol/crdtp/cbor.h"
+#include "src/base/memory.h"
 #include "src/base/platform/platform.h"
 #include "src/inspector/v8-string-conversions.h"
 #include "src/numbers/conversions.h"
@@ -236,9 +237,9 @@ String16 String16::fromUTF16LE(const UChar* stringStart, size_t length) {
   String16Builder builder;
   builder.reserveCapacity(length);
   for (size_t i = 0; i < length; i++) {
-    const UChar utf16be_char =
-        stringStart[i] << 8 | (stringStart[i] >> 8 & 0x00FF);
-    builder.append(utf16be_char);
+    // CBOR string data need not be aligned.
+    builder.append(v8::base::ReadLittleEndianValue<UChar>(
+        reinterpret_cast<v8::base::Address>(stringStart) + i * sizeof(UChar)));
   }
   return builder.toString();
 #else

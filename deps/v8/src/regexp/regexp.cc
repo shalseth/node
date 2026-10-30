@@ -797,6 +797,9 @@ std::unique_ptr<RegExpMacroAssembler> CreateNativeMacroAssembler(
 #elif V8_TARGET_ARCH_LOONG64
   macro_assembler.reset(new RegExpMacroAssemblerLOONG64(isolate, zone, mode,
                                                         output_register_count));
+#elif V8_TARGET_ARCH_SPARC64
+  macro_assembler.reset(new RegExpMacroAssemblerSPARC64(isolate, zone, mode,
+                                                        output_register_count));
 #else
 #error "Unsupported architecture"
 #endif

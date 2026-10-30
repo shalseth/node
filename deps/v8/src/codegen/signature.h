@@ -175,6 +175,16 @@ size_t hash_value(const Signature<T>& sig) {
 template <typename T, size_t kNumReturns = 0, size_t kNumParams = 0>
 class FixedSizeSignature : public Signature<T> {
  public:
+  // A non-trivial copy also prevents register returns from relocating reps_
+  // without rebasing the pointer in Signature (SPARC V9 returns up to 32 bytes).
+  FixedSizeSignature(const FixedSizeSignature& other)
+      : FixedSizeSignature(other.reps_, other.reps_ + kNumReturns) {}
+
+  FixedSizeSignature& operator=(const FixedSizeSignature& other) {
+    std::copy(other.reps_, other.reps_ + kNumReturns + kNumParams, reps_);
+    return *this;
+  }
+
   // Add return types to this signature (only allowed if there are none yet).
   template <typename... ReturnTypes>
   auto Returns(ReturnTypes... return_types) const {

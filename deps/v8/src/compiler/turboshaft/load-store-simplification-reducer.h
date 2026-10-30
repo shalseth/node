@@ -23,7 +23,7 @@ namespace v8::internal::compiler::turboshaft {
 #define V8_TARGET_ARCH_RESTRICTIVE_LOAD_STORE                             \
   V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_RISCV64 || \
       V8_TARGET_ARCH_LOONG64 || V8_TARGET_ARCH_MIPS64 ||                  \
-      V8_TARGET_ARCH_PPC64 || V8_TARGET_ARCH_RISCV32
+      V8_TARGET_ARCH_PPC64 || V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_SPARC64
 
 struct LoadStoreSimplificationConfiguration {
   // TODO(12783): This needs to be extended for all architectures that don't

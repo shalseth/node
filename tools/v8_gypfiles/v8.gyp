@@ -378,6 +378,11 @@
             '<(V8_ROOT)/src/builtins/ppc/builtins-ppc.cc',
           ],
         }],
+        ['v8_target_arch=="sparc64"', {
+          'sources': [
+            '<(V8_ROOT)/src/builtins/sparc64/builtins-sparc64.cc',
+          ],
+        }],
         ['v8_target_arch=="s390x"', {
           'sources': [
             '<(V8_ROOT)/src/builtins/s390/builtins-s390.cc',
@@ -860,6 +865,18 @@
               }],
             ],
           }],
+          ['v8_target_arch=="sparc64"', {
+            'sources': [
+              '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "v8_header_set.\\"v8_internal_headers\\".*?v8_enable_i18n_support.*?v8_current_cpu == \\"sparc64\\".*?sources \\+= ")',
+            ],
+            'conditions': [
+              ['v8_enable_sparkplug==1', {
+                'sources': [
+                  '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "v8_header_set.\\"v8_internal_headers\\".*?v8_enable_i18n_support.*?v8_current_cpu == \\"sparc64\\".*?v8_enable_sparkplug.*?sources \\+= ")',
+                ],
+              }],
+            ],
+          }],
           ['v8_target_arch=="s390x"', {
             'sources': [
               '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "v8_header_set.\\"v8_internal_headers\\".*?v8_enable_i18n_support.*?v8_current_cpu == \\"s390x\\".*?sources \\+= ")',
@@ -906,6 +923,11 @@
       'direct_dependent_settings': {
         'sources': ['<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "v8_compiler_sources = ")'],
         'conditions': [
+          ['v8_enable_maglev==0', {
+            'sources': [
+              '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "v8_compiler_sources =.*?!v8_enable_maglev.*?v8_compiler_sources \\+= ")',
+            ],
+          }],
           ['v8_target_arch=="ia32"', {
             'sources': [
               '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "v8_compiler_sources =.*?v8_current_cpu == \\"x86\\".*?v8_compiler_sources \\+= ")',
@@ -934,6 +956,11 @@
           ['v8_target_arch=="ppc64"', {
             'sources': [
               '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "v8_compiler_sources =.*?v8_current_cpu == \\"ppc64\\".*?v8_compiler_sources \\+= ")',
+            ],
+          }],
+          ['v8_target_arch=="sparc64"', {
+            'sources': [
+              '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "v8_compiler_sources =.*?v8_current_cpu == \\"sparc64\\".*?v8_compiler_sources \\+= ")',
             ],
           }],
           ['v8_target_arch=="s390x"', {
@@ -973,16 +1000,15 @@
         'run_torque',
         'v8_maybe_icu',
         'v8_base_without_compiler',
+        'v8_compiler_sources',
         'v8_internal_headers',
         'v8_libbase',
         'v8_shared_internal_headers',
         'v8_pch',
       ],
       'conditions': [
-        ['v8_enable_turbofan==1', {
-          'dependencies': ['v8_compiler_sources'],
-        }, {
-          'sources': ['<(V8_ROOT)/src/compiler/turbofan-disabled.cc'],
+        ['node_shared_abseil=="false"', {
+          'dependencies': ['abseil.gyp:abseil'],
         }],
       ],
     },  # v8_compiler_for_mksnapshot_source_set
@@ -1302,6 +1328,11 @@
         ['v8_target_arch=="ppc64"', {
           'sources': [
             '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "\\"v8_base_without_compiler.*?v8_enable_wasm_gdb_remote_debugging.*?v8_current_cpu == \\"ppc64\\".*?sources \\+= ")',
+          ],
+        }],
+        ['v8_target_arch=="sparc64"', {
+          'sources': [
+            '<!@pymod_do_main(GN-scraper "<(V8_ROOT)/BUILD.gn"  "\\"v8_base_without_compiler.*?v8_enable_wasm_gdb_remote_debugging.*?v8_current_cpu == \\"sparc64\\".*?sources \\+= ")',
           ],
         }],
         ['v8_target_arch=="s390x"', {
@@ -2211,6 +2242,11 @@
               ['_toolset == "host" and host_arch == "ppc64" or _toolset == "target" and target_arch=="ppc64"', {
                 'sources': [
                   '<(V8_ROOT)/src/heap/base/asm/ppc/push_registers_asm.cc',
+                ],
+              }],
+              ['_toolset == "host" and host_arch == "sparc64" or _toolset == "target" and target_arch=="sparc64"', {
+                'sources': [
+                  '<(V8_ROOT)/src/heap/base/asm/sparc64/push_registers_asm.cc',
                 ],
               }],
               ['_toolset == "host" and host_arch == "s390x" or _toolset == "target" and target_arch=="s390x"', {

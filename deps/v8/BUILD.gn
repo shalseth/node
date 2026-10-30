@@ -3350,6 +3350,8 @@ v8_source_set("v8_initializers") {
       ### gcmole(ppc64) ###
       "src/builtins/ppc/builtins-ppc.cc",
     ]
+  } else if (v8_current_cpu == "sparc64") {
+    sources += [ "src/builtins/sparc64/builtins-sparc64.cc" ]
   } else if (v8_current_cpu == "s390x") {
     sources += [
       ### gcmole(s390) ###
@@ -5183,6 +5185,28 @@ v8_header_set("v8_internal_headers") {
         "src/baseline/s390/baseline-compiler-s390-inl.h",
       ]
     }
+  } else if (v8_current_cpu == "sparc64") {
+    sources += [
+      "src/codegen/sparc64/assembler-sparc64-inl.h",
+      "src/codegen/sparc64/assembler-sparc64.h",
+      "src/codegen/sparc64/base-assembler-sparc64.h",
+      "src/codegen/sparc64/constants-sparc64.h",
+      "src/codegen/sparc64/interface-descriptors-sparc64-inl.h",
+      "src/codegen/sparc64/macro-assembler-sparc64.h",
+      "src/codegen/sparc64/register-sparc64.h",
+      "src/codegen/sparc64/reglist-sparc64.h",
+      "src/compiler/backend/sparc64/instruction-codes-sparc64.h",
+      "src/compiler/backend/sparc64/code-generator-sparc64-inl.h",
+      "src/execution/sparc64/frame-constants-sparc64.h",
+      "src/regexp/sparc64/regexp-macro-assembler-sparc64.h",
+      "src/wasm/baseline/sparc64/liftoff-assembler-sparc64-inl.h",
+    ]
+    if (v8_enable_sparkplug) {
+      sources += [
+        "src/baseline/sparc64/baseline-assembler-sparc64-inl.h",
+        "src/baseline/sparc64/baseline-compiler-sparc64-inl.h",
+      ]
+    }
   } else if (v8_current_cpu == "riscv64") {
     sources += [
       ### gcmole(riscv64) ###
@@ -5566,6 +5590,12 @@ if (v8_current_cpu == "x86") {
     "src/compiler/backend/ppc/instruction-scheduler-ppc.cc",
     "src/compiler/backend/ppc/instruction-selector-ppc.cc",
     "src/compiler/backend/ppc/unwinding-info-writer-ppc.cc",
+  ]
+} else if (v8_current_cpu == "sparc64") {
+  v8_compiler_sources += [
+    "src/compiler/backend/sparc64/code-generator-sparc64.cc",
+    "src/compiler/backend/sparc64/instruction-scheduler-sparc64.cc",
+    "src/compiler/backend/sparc64/instruction-selector-sparc64.cc",
   ]
 } else if (v8_current_cpu == "s390x") {
   v8_compiler_sources += [
@@ -6604,6 +6634,18 @@ v8_source_set("v8_base_without_compiler") {
       "src/execution/s390/simulator-s390.cc",
       "src/regexp/s390/regexp-macro-assembler-s390.cc",
     ]
+  } else if (v8_current_cpu == "sparc64") {
+    sources += [
+      "src/codegen/sparc64/assembler-sparc64.cc",
+      "src/codegen/sparc64/base-assembler-sparc64.cc",
+      "src/codegen/sparc64/cpu-sparc64.cc",
+      "src/codegen/sparc64/macro-assembler-sparc64.cc",
+      "src/deoptimizer/sparc64/deoptimizer-sparc64.cc",
+      "src/diagnostics/sparc64/disasm-sparc64.cc",
+      "src/diagnostics/sparc64/unwinder-sparc64.cc",
+      "src/execution/sparc64/frame-constants-sparc64.cc",
+      "src/regexp/sparc64/regexp-macro-assembler-sparc64.cc",
+    ]
   } else if (v8_current_cpu == "riscv64") {
     sources += [
       ### gcmole(riscv64) ###
@@ -7481,6 +7523,8 @@ v8_source_set("v8_heap_base") {
     sources += [ "src/heap/base/asm/arm64/push_registers_asm.cc" ]
   } else if (current_cpu == "ppc64") {
     sources += [ "src/heap/base/asm/ppc/push_registers_asm.cc" ]
+  } else if (current_cpu == "sparc64") {
+    sources += [ "src/heap/base/asm/sparc64/push_registers_asm.cc" ]
   } else if (current_os == "zos") {
     sources += [ "src/heap/base/asm/zos/push_registers_asm.cc" ]
   } else if (current_cpu == "s390x") {

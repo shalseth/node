@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/json/json-stringifier.h"
-
 #include <string_view>
 
 #include "absl/functional/overload.h"
 #include "hwy/highway.h"
+#include "src/base/memory.h"
 #include "src/base/strings.h"
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
 #include "src/common/message-template.h"
 #include "src/execution/protectors-inl.h"
+#include "src/json/json-stringifier.h"
 #include "src/numbers/conversions.h"
 #include "src/objects/elements-kind.h"
 #include "src/objects/heap-number-inl.h"
@@ -548,7 +548,8 @@ bool DoNotEscape(const SrcChar* chars, size_t length,
   static constexpr size_t stride = sizeof(PackedT);
   size_t i = 0;
   for (; i + (stride - 1) < length; i += stride) {
-    PackedT packed = *reinterpret_cast<const PackedT*>(chars + i);
+    PackedT packed =
+        base::ReadUnalignedValue<PackedT>(reinterpret_cast<Address>(chars + i));
     if (V8_UNLIKELY(NeedsEscape(packed))) break;
   }
   for (; i < length; i++) {
@@ -3380,7 +3381,8 @@ bool FastJsonStringifier<Char>::AppendStringSWAR(
   static constexpr size_t stride = sizeof(PackedT);
   size_t i = start;
   for (; i + (stride - 1) < length; i += stride) {
-    PackedT packed = *reinterpret_cast<const PackedT*>(chars + i);
+    PackedT packed =
+        base::ReadUnalignedValue<PackedT>(reinterpret_cast<Address>(chars + i));
     if (V8_UNLIKELY(NeedsEscape(packed))) break;
   }
   return AppendStringScalar(chars, length, i, uncopied_src_index, no_gc);

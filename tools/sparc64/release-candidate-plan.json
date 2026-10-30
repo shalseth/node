@@ -1,0 +1,16 @@
+{
+  "objective": "Produce a packaged Node 26 SPARC64 build that installs cleanly, runs representative applications on T7 and T4, and has documented build requirements and limitations.",
+  "parent_checkpoint": "node-features-20261030T111441.925735Z",
+  "parent_manifest_sha256": "af0474f9f4951a6aba702a0c0d87006d3758dbf2d3d5b3f2880609a7a86052ca",
+  "acceptance": [
+    "Fresh source checkout restored from authenticated base and overlay, with no copied generated files, build objects or Rust archives; documented native build succeeds",
+    "Versioned binary and source archives, complete port patch and SHA-256 checksums are produced with source/build/runtime provenance",
+    "Package installs and relocates in isolated prefixes; installed node, npm and npx and a native addon build work without using development-tree executables or headers",
+    "The same package passes representative HTTP/HTTPS/WebSocket, worker, TypeScript, Temporal, Wasm and FFI applications on T7 and T4, with native optimizing execution and CPU/ABI checks",
+    "Bounded installed-application soak and performance/memory baselines are recorded on both machines",
+    "Build/runtime requirements, install/uninstall instructions, supported hardware and known fixture/feature limitations are documented; package contents and evidence verified locally and natively",
+    "The validated parent checkpoint and worktree remain unchanged; no upstream publication without review"
+  ],
+  "runtime_strategy": "Shared OpenSSL 3, ICU 78, glibc and GCC runtime; explicit ABI requirements, validated on both machines",
+  "status": "in_progress"
+}

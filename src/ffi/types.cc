@@ -8,6 +8,7 @@
 #include "node_ffi.h"
 #include "v8.h"
 
+#include <algorithm>
 #include <climits>
 #include <cmath>
 #include <cstring>
@@ -241,7 +242,8 @@ bool IsFastCallEligible(const FFIFunction& fn, const char** out_reason) {
 #if !defined(__aarch64__) && !defined(_M_ARM64) && !defined(__x86_64__) &&     \
     !defined(_M_X64) && !defined(__powerpc64__) && !defined(__ppc64__) &&      \
     !defined(__PPC64__) && !defined(__loongarch64) &&                          \
-    !(defined(__riscv) && __riscv_xlen == 64) && !defined(__s390x__)
+    !(defined(__riscv) && __riscv_xlen == 64) && !defined(__s390x__) && \
+    !(defined(__sparc__) && defined(__arch64__))
   *out_reason = "no platform stub emitter";
   return false;
 #endif
@@ -428,6 +430,16 @@ bool IsFastCallEligible(const FFIFunction& fn, const char** out_reason) {
     *out_reason = "argument count exceeds s390x register limit";
     return false;
   }
+#elif defined(__sparc__) && defined(__arch64__)
+  if (has_buffer_arg || fp_count != 0 || IsFFITypeFloat(fn.return_type)) {
+    *out_reason = "buffer and float signatures use libffi on SPARC64";
+    return false;
+  }
+  if (fn.return_type == &ffi_type_sint8 || fn.return_type == &ffi_type_uint8 ||
+      fn.return_type == &ffi_type_sint16 || fn.return_type == &ffi_type_uint16) {
+    *out_reason = "narrow returns use libffi on SPARC64";
+    return false;
+  }
 #elif defined(__x86_64__)
   // x86_64 SysV: the V8 receiver occupies rdi, leaving rsi, rdx, rcx, r8, r9
   // (5 incoming GP slots); scalar signatures can load one more user GP arg
@@ -463,12 +475,6 @@ bool IsSBEligibleFFIType(ffi_type* type) {
 }
 
 bool IsSBEligibleSignature(const FFIFunction& fn) {
-  // The JS wrapper writes and reads the shared buffer little-endian while
-  // the C++ side uses memcpy in host order. On big-endian hosts these
-  // disagree, so the fast path is disabled there.
-  if constexpr (IsBigEndian()) {
-    return false;
-  }
   // Zero-argument functions gain nothing from the shared-buffer path
   // (no argument packing to skip) and measurably lose on tight native
   // calls like `uv_os_getpid` due to the wrapper's fixed overhead.
@@ -487,6 +493,17 @@ bool SignatureHasPointerArgs(const FFIFunction& fn) {
   return false;
 }
 
+static void CopyFFIBufferScalar(void* destination,
+                                const void* source,
+                                size_t size) {
+  if constexpr (IsBigEndian()) {
+    const auto* bytes = static_cast<const uint8_t*>(source);
+    std::reverse_copy(bytes, bytes + size, static_cast<uint8_t*>(destination));
+  } else {
+    std::memcpy(destination, source, size);
+  }
+}
+
 void ReadFFIArgFromBuffer(ffi_type* type,
                           const uint8_t* buffer,
                           size_t offset,
@@ -496,7 +513,7 @@ void ReadFFIArgFromBuffer(ffi_type* type,
   // memcpy avoids the strict-aliasing violation that a direct typed load
   // from the raw uint8_t buffer would incur.
   const uint8_t* src = buffer + offset;
-  std::memcpy(out, src, type->size);
+  CopyFFIBufferScalar(out, src, type->size);
 }
 
 void WriteFFIReturnToBuffer(ffi_type* type,
@@ -515,38 +532,38 @@ void WriteFFIReturnToBuffer(ffi_type* type,
   // branches read as ffi_arg or ffi_sarg and then truncate back down.
   if (type == &ffi_type_sint8) {
     int8_t tmp = static_cast<int8_t>(*static_cast<const ffi_sarg*>(result));
-    std::memcpy(dst, &tmp, sizeof(tmp));
+    CopyFFIBufferScalar(dst, &tmp, sizeof(tmp));
     return;
   }
   if (type == &ffi_type_uint8) {
     uint8_t tmp = static_cast<uint8_t>(*static_cast<const ffi_arg*>(result));
-    std::memcpy(dst, &tmp, sizeof(tmp));
+    CopyFFIBufferScalar(dst, &tmp, sizeof(tmp));
     return;
   }
   if (type == &ffi_type_sint16) {
     int16_t tmp = static_cast<int16_t>(*static_cast<const ffi_sarg*>(result));
-    std::memcpy(dst, &tmp, sizeof(tmp));
+    CopyFFIBufferScalar(dst, &tmp, sizeof(tmp));
     return;
   }
   if (type == &ffi_type_uint16) {
     uint16_t tmp = static_cast<uint16_t>(*static_cast<const ffi_arg*>(result));
-    std::memcpy(dst, &tmp, sizeof(tmp));
+    CopyFFIBufferScalar(dst, &tmp, sizeof(tmp));
     return;
   }
   if (type == &ffi_type_sint32) {
     int32_t tmp = static_cast<int32_t>(*static_cast<const ffi_sarg*>(result));
-    std::memcpy(dst, &tmp, sizeof(tmp));
+    CopyFFIBufferScalar(dst, &tmp, sizeof(tmp));
     return;
   }
   if (type == &ffi_type_uint32) {
     uint32_t tmp = static_cast<uint32_t>(*static_cast<const ffi_arg*>(result));
-    std::memcpy(dst, &tmp, sizeof(tmp));
+    CopyFFIBufferScalar(dst, &tmp, sizeof(tmp));
     return;
   }
 
   // Remaining SB-eligible types (sint64, uint64, float, double, pointer)
-  // are not promoted by libffi and can be copied as-is.
-  std::memcpy(dst, result, type->size);
+  // are not promoted by libffi.
+  CopyFFIBufferScalar(dst, result, type->size);
 }
 
 v8::Maybe<ffi_type*> ToFFIType(Environment* env, std::string_view type_str) {

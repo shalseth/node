@@ -420,6 +420,8 @@ void* OS::GetRandomMmapAddr() {
   // Little-endian Linux: 46 bits of virtual addressing.
   raw_addr &= uint64_t{0x3FFFFFFF0000};
 #endif
+#elif V8_TARGET_ARCH_SPARC64
+  raw_addr &= uint64_t{0xFFFFFFE000};
 #elif V8_TARGET_ARCH_S390X
   // Linux on Z uses bits 22-32 for Region Indexing, which translates to 42 bits
   // of virtual addressing.  Truncate to 40 bits to allow kernel chance to
@@ -485,8 +487,33 @@ void* OS::Allocate(void* hint, size_t size, size_t alignment,
   size_t request_size = size + (alignment - page_size);
   request_size = RoundUp(request_size, OS::AllocatePageSize());
   PageType page_type = PageType::kPrivate;
+#if V8_OS_LINUX && V8_HOST_ARCH_SPARC64
+  // JS dispatch entries pack code pointers into 48 bits. Linux SPARC can
+  // ignore a hint and return a mapping above the virtual address hole.
+  constexpr uintptr_t kAddressLimit = uintptr_t{1} << 48;
+  if (request_size > kAddressLimit) {
+    errno = ENOMEM;
+    return nullptr;
+  }
+  void* result = nullptr;
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    result = base::Allocate(hint, request_size, access, page_type, handle);
+    if (result == nullptr) return nullptr;
+    const uintptr_t address = reinterpret_cast<uintptr_t>(result);
+    if (address < kAddressLimit && request_size <= kAddressLimit - address)
+      break;
+    Free(result, request_size);
+    result = nullptr;
+    hint = GetRandomMmapAddr();
+  }
+  if (result == nullptr) {
+    errno = ENOMEM;
+    return nullptr;
+  }
+#else
   void* result = base::Allocate(hint, request_size, access, page_type, handle);
   if (result == nullptr) return nullptr;
+#endif
 
   // Unmap memory allocated before the aligned base address.
   uint8_t* base = static_cast<uint8_t*>(result);
@@ -794,15 +821,11 @@ bool OS::HasLazyCommits() {
 #endif  // !V8_OS_ZOS
 #endif  // !V8_OS_CYGWIN && !V8_OS_FUCHSIA
 
-const char* OS::GetGCFakeMMapFile() {
-  return g_gc_fake_mmap;
-}
-
+const char* OS::GetGCFakeMMapFile() { return g_gc_fake_mmap; }
 
 void OS::Sleep(TimeDelta interval) {
   usleep(static_cast<useconds_t>(interval.InMicroseconds()));
 }
-
 
 void OS::Abort() {
   switch (g_abort_mode) {
@@ -819,7 +842,6 @@ void OS::Abort() {
   // Redirect to std abort to signal abnormal program termination.
   abort();
 }
-
 
 void OS::DebugBreak() {
 #if V8_HOST_ARCH_ARM
@@ -847,6 +869,8 @@ void OS::DebugBreak() {
   asm("ebreak");
 #elif V8_HOST_ARCH_RISCV32
   asm("ebreak");
+#elif V8_HOST_ARCH_SPARC64
+  asm("ta 1");
 #else
 #error Unsupported host architecture.
 #endif
@@ -866,7 +890,6 @@ class PosixMemoryMappedFile final : public OS::MemoryMappedFile {
   void* const memory_;
   size_t const size_;
 };
-
 
 // static
 OS::MemoryMappedFile* OS::MemoryMappedFile::open(const char* name,
@@ -917,16 +940,13 @@ OS::MemoryMappedFile* OS::MemoryMappedFile::create(const char* name,
   return nullptr;
 }
 
-
 PosixMemoryMappedFile::~PosixMemoryMappedFile() {
   if (memory_) OS::Free(memory_, RoundUp(size_, OS::AllocatePageSize()));
   fclose(file_);
 }
 #endif  // !V8_OS_ZOS
 
-int OS::GetCurrentProcessId() {
-  return static_cast<int>(getpid());
-}
+int OS::GetCurrentProcessId() { return static_cast<int>(getpid()); }
 
 int OS::GetCurrentThreadIdInternal() {
 #if V8_OS_DARWIN || (V8_OS_ANDROID && defined(__APPLE__))
@@ -993,24 +1013,18 @@ int OS::GetPeakMemoryUsageKb() {
 #endif  // defined(V8_OS_FUCHSIA)
 }
 
-double OS::TimeCurrentMillis() {
-  return Time::Now().ToJsTime();
-}
+double OS::TimeCurrentMillis() { return Time::Now().ToJsTime(); }
 
 double PosixTimezoneCache::DaylightSavingsOffset(double time) {
   if (std::isnan(time)) return std::numeric_limits<double>::quiet_NaN();
-  time_t tv = static_cast<time_t>(std::floor(time/msPerSecond));
+  time_t tv = static_cast<time_t>(std::floor(time / msPerSecond));
   struct tm tm;
   struct tm* t = localtime_r(&tv, &tm);
   if (nullptr == t) return std::numeric_limits<double>::quiet_NaN();
   return t->tm_isdst > 0 ? 3600 * msPerSecond : 0;
 }
 
-
-int OS::GetLastError() {
-  return errno;
-}
-
+int OS::GetLastError() { return errno; }
 
 // ----------------------------------------------------------------------------
 // POSIX stdio support.
@@ -1030,10 +1044,7 @@ FILE* OS::FOpen(const char* path, const char* mode) {
   return nullptr;
 }
 
-
-bool OS::Remove(const char* path) {
-  return (remove(path) == 0);
-}
+bool OS::Remove(const char* path) { return (remove(path) == 0); }
 
 char OS::DirectorySeparator() { return '/'; }
 
@@ -1041,10 +1052,7 @@ bool OS::isDirectorySeparator(const char ch) {
   return ch == DirectorySeparator();
 }
 
-
-FILE* OS::OpenTemporaryFile() {
-  return tmpfile();
-}
+FILE* OS::OpenTemporaryFile() { return tmpfile(); }
 
 const char* const OS::LogFileOpenMode = "w+";
 
@@ -1055,7 +1063,6 @@ void OS::Print(const char* format, ...) {
   va_end(args);
 }
 
-
 void OS::VPrint(const char* format, va_list args) {
 #if defined(ANDROID) && !defined(V8_ANDROID_LOG_STDOUT)
   __android_log_vprint(ANDROID_LOG_INFO, LOG_TAG, format, args);
@@ -1064,14 +1071,12 @@ void OS::VPrint(const char* format, va_list args) {
 #endif
 }
 
-
 void OS::FPrint(FILE* out, const char* format, ...) {
   va_list args;
   va_start(args, format);
   VFPrint(out, format, args);
   va_end(args);
 }
-
 
 void OS::VFPrint(FILE* out, const char* format, va_list args) {
 #if defined(ANDROID) && !defined(V8_ANDROID_LOG_STDOUT)
@@ -1083,7 +1088,6 @@ void OS::VFPrint(FILE* out, const char* format, va_list args) {
   vfprintf(out, format, args);
 }
 
-
 void OS::PrintError(const char* format, ...) {
   va_list args;
   va_start(args, format);
@@ -1091,7 +1095,6 @@ void OS::PrintError(const char* format, ...) {
   va_end(args);
   fflush(stderr);
 }
-
 
 void OS::VPrintError(const char* format, va_list args) {
 #if defined(ANDROID) && !defined(V8_ANDROID_LOG_STDOUT)
@@ -1101,7 +1104,6 @@ void OS::VPrintError(const char* format, va_list args) {
 #endif
 }
 
-
 int OS::SNPrintF(char* str, int length, const char* format, ...) {
   va_list args;
   va_start(args, format);
@@ -1110,22 +1112,16 @@ int OS::SNPrintF(char* str, int length, const char* format, ...) {
   return result;
 }
 
-
-int OS::VSNPrintF(char* str,
-                  int length,
-                  const char* format,
-                  va_list args) {
+int OS::VSNPrintF(char* str, int length, const char* format, va_list args) {
   int n = vsnprintf(str, length, format, args);
   if (n < 0 || n >= length) {
     // If the length is zero, the assignment fails.
-    if (length > 0)
-      str[length - 1] = '\0';
+    if (length > 0) str[length - 1] = '\0';
     return -1;
   } else {
     return n;
   }
 }
-
 
 // ----------------------------------------------------------------------------
 // POSIX string support.
@@ -1245,10 +1241,7 @@ Thread::Thread(const Options& options)
   set_name(options.name());
 }
 
-Thread::~Thread() {
-  delete data_;
-}
-
+Thread::~Thread() { delete data_; }
 
 static void SetThreadName(const char* name) {
 #if V8_OS_DRAGONFLYBSD || V8_OS_FREEBSD || V8_OS_OPENBSD
@@ -1261,7 +1254,7 @@ static void SetThreadName(const char* name) {
   // for it at runtime.
   int (*dynamic_pthread_setname_np)(const char*);
   *reinterpret_cast<void**>(&dynamic_pthread_setname_np) =
-    dlsym(RTLD_DEFAULT, "pthread_setname_np");
+      dlsym(RTLD_DEFAULT, "pthread_setname_np");
   if (dynamic_pthread_setname_np == nullptr) return;
 
   // Mac OS X does not expose the length limit of the name, so hardcode it.
@@ -1284,7 +1277,9 @@ static void* ThreadEntry(void* arg) {
   // We take the lock here to make sure that pthread_create finished first since
   // we don't know which thread will run first (the original thread or the new
   // one).
-  { MutexGuard lock_guard(&thread->data()->thread_creation_mutex_); }
+  {
+    MutexGuard lock_guard(&thread->data()->thread_creation_mutex_);
+  }
   SetThreadName(thread->name());
 #if V8_OS_DARWIN
   switch (thread->priority()) {
@@ -1319,7 +1314,6 @@ static void* ThreadEntry(void* arg) {
   thread->NotifyStartedAndDispatch();
   return nullptr;
 }
-
 
 void Thread::set_name(const char* name) {
   strncpy(name_, name, sizeof(name_) - 1);
@@ -1372,7 +1366,6 @@ static Thread::LocalStorageKey PthreadKeyToLocalKey(pthread_key_t pthread_key) {
 #endif
 }
 
-
 static pthread_key_t LocalKeyToPthreadKey(Thread::LocalStorageKey local_key) {
 #if V8_OS_CYGWIN
   static_assert(sizeof(Thread::LocalStorageKey) == sizeof(pthread_key_t));
@@ -1416,12 +1409,10 @@ void Thread::DeleteThreadLocalKey(LocalStorageKey key) {
   USE(result);
 }
 
-
 void* Thread::GetThreadLocal(LocalStorageKey key) {
   pthread_key_t pthread_key = LocalKeyToPthreadKey(key);
   return pthread_getspecific(pthread_key);
 }
-
 
 void Thread::SetThreadLocal(LocalStorageKey key, void* value) {
   pthread_key_t pthread_key = LocalKeyToPthreadKey(key);
@@ -1458,7 +1449,7 @@ Stack::StackSlot Stack::ObtainCurrentThreadStackStart() {
 #elif V8_OS_OPENBSD
   stack_t stack;
   int error = pthread_stackseg_np(pthread_self(), &stack);
-  if(error) {
+  if (error) {
     DCHECK(MainThreadIsCurrentThread());
     return nullptr;
   }

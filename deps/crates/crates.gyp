@@ -67,6 +67,10 @@
               '-luserenv'
             ],
           }],
+          ['OS=="linux" and target_arch=="sparc64"', {
+            'libraries!': ['<(node_crates_libpath)'],
+            'libraries': ['<(node_crates_libpath).sparc64.a'],
+          }],
         ],
       },
       'conditions': [
@@ -110,6 +114,20 @@
               ],
             }
           ],
+        }],
+        ['OS=="linux" and target_arch=="sparc64"', {
+          'actions': [{
+            'action_name': 'isolate_rust_libm',
+            'inputs': ['<(node_crates_libpath)', 'isolate_libm.py'],
+            'outputs': [
+              '<(node_crates_libpath).sparc64.a',
+              '<(node_crates_libpath).sparc64.a.json',
+            ],
+            'action': [
+              '<(python)', 'isolate_libm.py',
+              '<(node_crates_libpath)', '<(node_crates_libpath).sparc64.a',
+            ],
+          }],
         }],
       ],
     },

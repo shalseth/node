@@ -23,6 +23,8 @@
 #include "src/wasm/baseline/mips64/liftoff-assembler-mips64-inl.h"
 #elif V8_TARGET_ARCH_LOONG64
 #include "src/wasm/baseline/loong64/liftoff-assembler-loong64-inl.h"
+#elif V8_TARGET_ARCH_SPARC64
+#include "src/wasm/baseline/sparc64/liftoff-assembler-sparc64-inl.h"
 #elif V8_TARGET_ARCH_S390X
 #include "src/wasm/baseline/s390/liftoff-assembler-s390-inl.h"
 #elif V8_TARGET_ARCH_RISCV64
@@ -127,8 +129,8 @@ void LiftoffAssembler::LoadSmiAsInt32(LiftoffRegister dst, Register src_addr,
 
 void LiftoffAssembler::LoadCodePointer(Register dst, Register src_addr,
                                        int32_t offset_imm) {
-    return Load(LiftoffRegister(dst), src_addr, no_reg, offset_imm,
-                LoadType::kI32Load);
+  return Load(LiftoffRegister(dst), src_addr, no_reg, offset_imm,
+              LoadType::kI32Load);
 }
 
 void LiftoffAssembler::emit_ptrsize_add(Register dst, Register lhs,

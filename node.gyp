@@ -495,6 +495,7 @@
       'src/ffi/platforms/ppc64.cc',
       'src/ffi/platforms/riscv64.cc',
       'src/ffi/platforms/s390x.cc',
+      'src/ffi/platforms/sparc64.cc',
       'src/ffi/platforms/x64.cc',
       'src/ffi/data.cc',
       'src/ffi/data.h',

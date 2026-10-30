@@ -47,7 +47,8 @@ parser = argparse.ArgumentParser()
 valid_os = ('win', 'mac', 'solaris', 'freebsd', 'openbsd', 'linux',
             'android', 'aix', 'cloudabi', 'os400', 'ios', 'openharmony')
 valid_arch = ('arm', 'arm64', 'ia32', 'mips', 'mipsel', 'mips64el',
-              'ppc64', 'x64', 'x86', 'x86_64', 's390x', 'riscv64', 'loong64')
+              'ppc64', 'x64', 'x86', 'x86_64', 's390x', 'riscv64', 'loong64',
+              'sparc64')
 valid_arm_float_abi = ('soft', 'softfp', 'hard')
 valid_arm_fpu = ('vfp', 'vfpv3', 'vfpv3-d16', 'neon')
 valid_mips_arch = ('loongson', 'r1', 'r2', 'r6', 'rx')
@@ -1232,11 +1233,22 @@ parser.add_argument('--v8-lite-mode',
          'memory footprint, but also implies no just-in-time compilation ' +
          'support, thus much slower execution)')
 
+parser.add_argument('--v8-disable-webassembly',
+    action='store_true',
+    dest='v8_disable_webassembly',
+    default=False,
+    help='disable WebAssembly support in V8')
+
 parser.add_argument('--v8-enable-object-print',
     action='store_true',
     dest='v8_enable_object_print',
     default=True,
     help='compile V8 with auxiliary functions for native debuggers')
+
+parser.add_argument('--v8-enable-verify-heap',
+    action='store_true',
+    default=None,
+    help='compile V8 with runtime heap verification support')
 
 parser.add_argument('--v8-disable-object-print',
     action='store_true',
@@ -1776,6 +1788,8 @@ def host_arch_cc():
   if sys.platform.startswith('zos'):
     return 's390x'
   k = cc_macros(os.environ.get('CC_host'))
+  if '__sparc__' in k and '__arch64__' in k:
+    return 'sparc64'
 
   matchup = {
     '__aarch64__' : 'arm64',
@@ -2233,7 +2247,7 @@ def configure_library(lib, output, pkgname=None, libraries_key='libraries'):
 def configure_v8(o, configs):
   set_configuration_variable(configs, 'v8_enable_v8_checks', release=0, debug=1)
 
-  o['variables']['v8_enable_webassembly'] = 0 if options.v8_lite_mode else 1
+  o['variables']['v8_enable_webassembly'] = 0 if (options.v8_lite_mode or options.v8_disable_webassembly) else 1
   o['variables']['v8_enable_javascript_promise_hooks'] = 1
   o['variables']['v8_enable_lite_mode'] = 1 if options.v8_lite_mode else 0
   is_gdbjit_supported_arch = (
@@ -2249,6 +2263,8 @@ def configure_v8(o, configs):
   o['variables']['v8_optimized_debug'] = 0 if options.v8_non_optimized_debug else 1
   o['variables']['dcheck_always_on'] = 1 if options.v8_with_dchecks else 0
   o['variables']['v8_enable_object_print'] = 0 if options.v8_disable_object_print else 1
+  if options.v8_enable_verify_heap:
+    o['variables']['v8_enable_verify_heap'] = 1
   o['variables']['v8_random_seed'] = 0  # Use a random seed for hash tables.
   o['variables']['v8_promise_internal_field_count'] = 1 # Add internal field to promises for async hooks.
   o['variables']['v8_use_siphash'] = 0 if options.without_siphash else 1
@@ -2412,6 +2428,9 @@ def configure_sqlite(o):
 def bundled_ffi_supported(os_name, target_arch):
   if target_arch == 'x86':
     target_arch = 'ia32'
+
+  if target_arch == 'sparc64':
+    return os_name == 'linux'
 
   if target_arch in {'arm', 'arm64', 'ia32', 'x64', 'x86_64',
                      'riscv64', 'loong64'}:

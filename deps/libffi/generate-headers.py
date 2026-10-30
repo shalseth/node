@@ -41,6 +41,9 @@ def get_target(os_name, target_arch):
     if target_arch == 'x64':
         return ('X86_WIN64' if os_name == 'win' else 'X86_64', 'x86')
 
+    if target_arch == 'sparc64' and os_name == 'linux':
+        return ('SPARC', 'sparc')
+
     if target_arch == 'riscv64':
         return ('RISCV', 'riscv')
 
@@ -128,6 +131,9 @@ def render_fficonfig(os_name, target_arch):
 
     if target_arch in ('ia32', 'x64') and os_name != 'win':
         lines.append('#define HAVE_AS_X86_PCREL 1')
+
+    if target_arch == 'sparc64' and os_name == 'linux':
+        lines.append('#define HAVE_AS_SPARC_UA_PCREL 1')
 
     if uses_exec_trampoline_table(os_name, target_arch):
         lines.append('#define FFI_EXEC_TRAMPOLINE_TABLE 1')
@@ -238,6 +244,8 @@ def detect_target_arch():
         'arm64': 'arm64',
         'aarch64': 'arm64',
         'arm': 'arm',
+        'sparc64': 'sparc64',
+        'sparcv9': 'sparc64',
         'riscv64': 'riscv64',
         'loong64': 'loong64',
         'ppc64': 'ppc64',

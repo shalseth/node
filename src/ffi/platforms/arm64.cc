@@ -438,7 +438,8 @@ extern "C" void node_ffi_free_fast_trampoline(
 #elif !defined(__x86_64__) && !defined(_M_X64) && \
     !defined(__powerpc64__) && !defined(__ppc64__) && \
     !defined(__loongarch64) && \
-    !(defined(__riscv) && __riscv_xlen == 64) && !defined(__s390x__)
+    !(defined(__riscv) && __riscv_xlen == 64) && !defined(__s390x__) && \
+    !(defined(__sparc__) && defined(__arch64__))
 
 extern "C" bool node_ffi_create_fast_trampoline(
     const node::ffi::FastFFITrampolineConfig& config,

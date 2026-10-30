@@ -55,9 +55,8 @@ constexpr Register kLiftoffFrameSetupFunctionReg = t0;
 
 // t6-t8 and s3-s4: scratch registers, s6: root
 // s8: pointer-compression-cage base
-constexpr RegList kLiftoffAssemblerGpCacheRegs = {a0, a1, a2, a3, a4, a5, a6,
-                                                  a7, t0, t1, t2, t3, t4, t5,
-                                                  s0, s1, s2, s5, s7};
+constexpr RegList kLiftoffAssemblerGpCacheRegs = {
+    a0, a1, a2, a3, a4, a5, a6, a7, t0, t1, t2, t3, t4, t5, s0, s1, s2, s5, s7};
 
 // f29: zero
 // f27-f28 and f30-f31: macro-assembler scratch float Registers.
@@ -97,6 +96,14 @@ constexpr DoubleRegList kLiftoffAssemblerFpCacheRegs = {
 
 // For the "WasmLiftoffFrameSetup" builtin.
 constexpr Register kLiftoffFrameSetupFunctionReg = x8;
+
+#elif V8_TARGET_ARCH_SPARC64
+// Native window linkage, OS globals and macro scratch registers are excluded.
+constexpr RegList kLiftoffAssemblerGpCacheRegs = {
+    o0, o1, o2, o3, o4, o5, l0, l1, l2, l3, l4, l6, i0, i1, i2, i3, i4, i5};
+constexpr DoubleRegList kLiftoffAssemblerFpCacheRegs = {
+    d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14};
+constexpr Register kLiftoffFrameSetupFunctionReg = l4;
 
 #elif V8_TARGET_ARCH_S390X
 

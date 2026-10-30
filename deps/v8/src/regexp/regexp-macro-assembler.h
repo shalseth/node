@@ -64,7 +64,7 @@ class RegExpMacroAssembler {
   int stack_limit_slack_slot_count() const;
   bool CanReadUnaligned() const;
 
-  virtual void AdvanceCurrentPosition(int by) = 0;  // Signed cp change.
+  virtual void AdvanceCurrentPosition(int by) = 0;    // Signed cp change.
   virtual void AdvanceRegister(int reg, int by) = 0;  // r[reg] += by.
   // Continues execution from the position pushed on the top of the backtrack
   // stack by an earlier PushBacktrack(Label*).
@@ -75,8 +75,7 @@ class RegExpMacroAssembler {
   virtual void CheckCharacter(unsigned c, Label* on_equal) = 0;
   // Bitwise and the current character with the given constant and then
   // check for a match with c.
-  virtual void CheckCharacterAfterAnd(unsigned c,
-                                      unsigned and_with,
+  virtual void CheckCharacterAfterAnd(unsigned c, unsigned and_with,
                                       Label* on_equal) = 0;
   virtual void CheckCharacterGT(base::uc16 limit, Label* on_greater) = 0;
   virtual void CheckCharacterLT(base::uc16 limit, Label* on_less) = 0;
@@ -93,8 +92,7 @@ class RegExpMacroAssembler {
   // matches.  If the label is nullptr then we should pop a backtrack address
   // off the stack and go to that.
   virtual void CheckNotCharacter(unsigned c, Label* on_not_equal) = 0;
-  virtual void CheckNotCharacterAfterAnd(unsigned c,
-                                         unsigned and_with,
+  virtual void CheckNotCharacterAfterAnd(unsigned c, unsigned and_with,
                                          Label* on_not_equal) = 0;
   // Subtract a constant from the current character, then and with the given
   // constant and then check for a match with c.
@@ -241,6 +239,7 @@ class RegExpMacroAssembler {
   V(LOONG64)                    \
   V(RISCV)                      \
   V(RISCV32)                    \
+  V(SPARC64)                    \
   V(S390)                       \
   V(PPC)                        \
   V(X64)                        \
@@ -363,7 +362,7 @@ class RegExpMacroAssembler {
   const Mode mode_;
 };
 
-class NativeRegExpMacroAssembler: public RegExpMacroAssembler {
+class NativeRegExpMacroAssembler : public RegExpMacroAssembler {
  public:
   // Result of calling generated native RegExp code.
   // RETRY: Something significant changed during execution, and the matching

@@ -571,6 +571,9 @@ typeclasses = {}  # maps type names to corresponding class names
 klasses = {}  # known classes, including parents
 fields = []  # field declarations
 offsetof_fields = []  # field declarations using offsetof
+field_conditions = {
+    'Map::kImmediateSupertypeOffset': 'V8_ENABLE_WEBASSEMBLY',
+}
 
 header = '''
 /*
@@ -947,7 +950,11 @@ def emit_constants(out, consts):
   for const in consts:
     name = ws.sub('', const['name'])
     value = ws.sub('', str(const['value']))  # Can be a number.
-    lines.append('V8_EXPORT int v8dbg_%s = %s;' % (name, value))
+    declaration = 'V8_EXPORT int v8dbg_%s = %s;' % (name, value)
+    condition = field_conditions.get(value)
+    if condition:
+      declaration = '#if %s\n%s\n#endif' % (condition, declaration)
+    lines.append(declaration)
 
   # Generate without duplicates and with preserved order.
   out.write('\n'.join(dict.fromkeys(lines)))

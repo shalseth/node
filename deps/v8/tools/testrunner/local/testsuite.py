@@ -49,7 +49,10 @@ class VariantsGenerator(object):
     """Generator producing (variant, flags, procid suffix) tuples."""
     flags_set = self._get_flags_set(test)
     for n, variant in enumerate(self._get_variants(test)):
-      yield (variant, flags_set[variant][0], n)
+      flags = flags_set[variant][0]
+      if not test.suite.statusfile.variables.get('has_webassembly', True):
+        flags = [f for f in flags if f != '--no-wasm-lazy-compilation']
+      yield (variant, flags, n)
 
   def _get_flags_set(self, test):
     return ALL_VARIANT_FLAGS

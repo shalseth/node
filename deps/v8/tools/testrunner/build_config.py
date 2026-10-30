@@ -5,7 +5,7 @@
 # Increase the timeout for these:
 SLOW_ARCHS = [
     "arm", "arm64", "mips64", "mips64el", "s390x", "riscv32", "riscv64",
-    "loong64"
+    "loong64", "sparc64"
 ]
 
 # Timeout scale factor per build flag.

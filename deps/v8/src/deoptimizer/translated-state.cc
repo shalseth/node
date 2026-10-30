@@ -834,7 +834,7 @@ uint32_t TranslatedState::GetUInt32Slot(Address fp, int slot_offset) {
 }
 
 Float32 TranslatedState::GetFloatSlot(Address fp, int slot_offset) {
-#if !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_PPC64
+#if !V8_TARGET_ARCH_S390X && !V8_TARGET_ARCH_PPC64 && !V8_TARGET_ARCH_SPARC64
   return Float32::FromBits(GetUInt32Slot(fp, slot_offset));
 #else
   return Float32::FromBits(Memory<uint32_t>(fp + slot_offset));

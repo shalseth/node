@@ -99,6 +99,8 @@ constexpr int kMinimumOSPageSize = 16 * 1024;
 // Linux on arm64 (excluding android) and PPC64 can be configured for up to 64kB
 // pages.
 constexpr int kMinimumOSPageSize = 64 * 1024;
+#elif defined(V8_HOST_ARCH_SPARC64)
+constexpr int kMinimumOSPageSize = 8 * 1024;
 #else
 // Everything else uses 4kB pages.
 constexpr int kMinimumOSPageSize = 4 * 1024;

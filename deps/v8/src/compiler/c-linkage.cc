@@ -105,6 +105,11 @@ namespace {
 #define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
 #define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 
+#elif V8_TARGET_ARCH_SPARC64
+#define PARAM_REGISTERS o0, o1, o2, o3, o4, o5
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
+
 #elif V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_RISCV64
 // ===========================================================================
 // == riscv64 =================================================================

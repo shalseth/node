@@ -34,6 +34,8 @@
 #include "src/codegen/loong64/interface-descriptors-loong64-inl.h"
 #elif V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_RISCV64
 #include "src/codegen/riscv/interface-descriptors-riscv-inl.h"
+#elif V8_TARGET_ARCH_SPARC64
+#include "src/codegen/sparc64/interface-descriptors-sparc64-inl.h"
 #else
 #error Unsupported target architecture.
 #endif
@@ -464,7 +466,8 @@ constexpr auto BaselineOutOfLinePrologueDescriptor::registers() {
   // TODO(v8:11421): Implement on other platforms.
 #if V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 || V8_TARGET_ARCH_ARM ||       \
     V8_TARGET_ARCH_PPC64 || V8_TARGET_ARCH_S390X || V8_TARGET_ARCH_RISCV64 || \
-    V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_LOONG64 || V8_TARGET_ARCH_RISCV32
+    V8_TARGET_ARCH_MIPS64 || V8_TARGET_ARCH_LOONG64 || V8_TARGET_ARCH_RISCV32 || \
+    V8_TARGET_ARCH_SPARC64
   return RegisterArray(
       kContextRegister, kJSFunctionRegister, kJavaScriptCallArgCountRegister,
       kJavaScriptCallExtraArg1Register, kJavaScriptCallNewTargetRegister,
@@ -485,7 +488,7 @@ constexpr auto BaselineLeaveFrameDescriptor::registers() {
 #if V8_TARGET_ARCH_IA32 || V8_TARGET_ARCH_X64 || V8_TARGET_ARCH_ARM64 ||  \
     V8_TARGET_ARCH_ARM || V8_TARGET_ARCH_PPC64 || V8_TARGET_ARCH_S390X || \
     V8_TARGET_ARCH_RISCV64 || V8_TARGET_ARCH_MIPS64 ||                    \
-    V8_TARGET_ARCH_LOONG64 || V8_TARGET_ARCH_RISCV32
+    V8_TARGET_ARCH_LOONG64 || V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_SPARC64
   return RegisterArray(ParamsSizeRegister(), WeightRegister());
 #else
   return DefaultRegisterArray();

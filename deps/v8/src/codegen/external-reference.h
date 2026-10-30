@@ -477,8 +477,7 @@ enum class IsolateFieldId : uint8_t;
     "RegExpMacroAssembler::CaseInsensitiveCompareNonUnicode()")                \
   V(re_is_character_in_range_array,                                            \
     "RegExpMacroAssembler::IsCharacterInRangeArray()")                         \
-  V(re_check_stack_guard_state,                                                \
-    "RegExpMacroAssembler*::CheckStackGuardState()")                           \
+  EXTERNAL_REFERENCE_LIST_REGEXP_NATIVE(V)                                     \
   V(re_grow_stack, "NativeRegExpMacroAssembler::GrowStack()")                  \
   V(re_word_character_map, "RegExpMacroAssembler::word_character_map")         \
   V(re_match_for_call_from_js, "IrregexpInterpreter::MatchForCallFromJs")      \
@@ -495,6 +494,11 @@ enum class IsolateFieldId : uint8_t;
   EXTERNAL_REFERENCE_LIST_INTL(V)                                              \
   EXTERNAL_REFERENCE_LIST_SANDBOX(V)                                           \
   EXTERNAL_REFERENCE_LIST_CET_SHADOW_STACK(V)
+
+#define EXTERNAL_REFERENCE_LIST_REGEXP_NATIVE(V)   \
+  V(re_check_stack_guard_state,                    \
+    "RegExpMacroAssembler*::CheckStackGuardState(" \
+    ")")
 
 #ifdef V8_INTL_SUPPORT
 #define EXTERNAL_REFERENCE_LIST_INTL(V)                               \

@@ -101,6 +101,8 @@ static int get_num_allocatable_double_registers() {
       kMaxAllocatableDoubleRegisterCount;
 #elif V8_TARGET_ARCH_RISCV32
       kMaxAllocatableDoubleRegisterCount;
+#elif V8_TARGET_ARCH_SPARC64
+      kMaxAllocatableDoubleRegisterCount;
 #else
 #error Unsupported target architecture.
 #endif

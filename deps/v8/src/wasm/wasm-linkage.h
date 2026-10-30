@@ -13,6 +13,7 @@
 #include "src/codegen/assembler-arch.h"
 #include "src/codegen/linkage-location.h"
 #include "src/codegen/machine-type.h"
+#include "src/codegen/register.h"
 
 namespace v8 {
 namespace internal {
@@ -87,6 +88,12 @@ constexpr Register kGpParamRegisters[] = {r10, r3, r5, r6, r7, r8, r9};
 constexpr Register kGpReturnRegisters[] = {r3, r4};
 constexpr DoubleRegister kFpParamRegisters[] = {d1, d2, d3, d4, d5, d6, d7, d8};
 constexpr DoubleRegister kFpReturnRegisters[] = {d1, d2};
+
+#elif V8_TARGET_ARCH_SPARC64
+constexpr Register kGpParamRegisters[] = {o4, o0, o1, o2, o3, o5};
+constexpr Register kGpReturnRegisters[] = {o0, o1};
+constexpr DoubleRegister kFpParamRegisters[] = {d0, d1, d2, d3, d4, d5, d6, d7};
+constexpr DoubleRegister kFpReturnRegisters[] = {d0, d1};
 
 #elif V8_TARGET_ARCH_S390X
 // ===========================================================================

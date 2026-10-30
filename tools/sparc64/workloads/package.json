@@ -1,0 +1,10 @@
+{
+  "name": "sparc64-node-hardening-workloads",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "eslint": "10.13.0",
+    "typescript": "6.0.3"
+  }
+}

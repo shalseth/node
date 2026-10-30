@@ -1,0 +1,1 @@
+{"name":"sparc64-installed-addon","version":"1.0.0","private":true,"scripts":{"install":"node-gyp rebuild"}}

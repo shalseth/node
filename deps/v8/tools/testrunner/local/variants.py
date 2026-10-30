@@ -333,6 +333,8 @@ INCOMPATIBLE_FLAGS_PER_BUILD_VARIABLE = {
 # The conflicts might be directly contradictory flags or be caused by the
 # implications defined in flag-definitions.h.
 INCOMPATIBLE_FLAGS_PER_EXTRA_FLAG = {
+    "--sparkplug": INCOMPATIBLE_FLAGS_PER_VARIANT["sparkplug"],
+    "--always-sparkplug": INCOMPATIBLE_FLAGS_PER_VARIANT["always_sparkplug"],
     "--flush-bytecode": ["--jit-fuzzing"],
     "--concurrent-recompilation": [
         "--predictable", "--assert-types", "--turboshaft-assert-types",

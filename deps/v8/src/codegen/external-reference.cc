@@ -747,24 +747,23 @@ void* allocate_buffer_impl(Isolate* isolate, size_t size) {
 FUNCTION_REFERENCE(allocate_buffer, allocate_buffer_impl)
 
 static void f64_acos_wrapper(Address data) {
-  double input = ReadUnalignedValue<double>(data);
-  WriteUnalignedValue(data, base::ieee754::acos(input));
+  double input = base::ReadUnalignedValue<double>(data);
+  base::WriteUnalignedValue(data, base::ieee754::acos(input));
 }
 
 FUNCTION_REFERENCE(f64_acos_wrapper_function, f64_acos_wrapper)
 
 static void f64_asin_wrapper(Address data) {
-  double input = ReadUnalignedValue<double>(data);
-  WriteUnalignedValue<double>(data, base::ieee754::asin(input));
+  double input = base::ReadUnalignedValue<double>(data);
+  base::WriteUnalignedValue<double>(data, base::ieee754::asin(input));
 }
 
 FUNCTION_REFERENCE(f64_asin_wrapper_function, f64_asin_wrapper)
 
-
 static void f64_mod_wrapper(Address data) {
-  double dividend = ReadUnalignedValue<double>(data);
-  double divisor = ReadUnalignedValue<double>(data + sizeof(dividend));
-  WriteUnalignedValue<double>(data, Modulo(dividend, divisor));
+  double dividend = base::ReadUnalignedValue<double>(data);
+  double divisor = base::ReadUnalignedValue<double>(data + sizeof(dividend));
+  base::WriteUnalignedValue<double>(data, Modulo(dividend, divisor));
 }
 
 FUNCTION_REFERENCE(f64_mod_wrapper_function, f64_mod_wrapper)
@@ -1119,6 +1118,8 @@ ExternalReference::invoke_named_interceptor_setter_callback() {
 #define re_stack_check_func RegExpMacroAssemblerS390::CheckStackGuardState
 #elif V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_RISCV64
 #define re_stack_check_func RegExpMacroAssemblerRISCV::CheckStackGuardState
+#elif V8_TARGET_ARCH_SPARC64
+#define re_stack_check_func RegExpMacroAssemblerSPARC64::CheckStackGuardState
 #else
 UNREACHABLE();
 #endif
@@ -1813,8 +1814,8 @@ void tsan_relaxed_store_16_bits(Address addr, int64_t value) {
 
 void tsan_relaxed_store_32_bits(Address addr, int64_t value) {
 #if V8_TARGET_ARCH_X64
-    base::Relaxed_Store(reinterpret_cast<base::Atomic32*>(addr),
-                        static_cast<base::Atomic32>(value));
+  base::Relaxed_Store(reinterpret_cast<base::Atomic32*>(addr),
+                      static_cast<base::Atomic32>(value));
 #else
   UNREACHABLE();
 #endif  // V8_TARGET_ARCH_X64

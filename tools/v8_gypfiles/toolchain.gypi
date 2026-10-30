@@ -300,6 +300,10 @@
           'V8_TARGET_ARCH_LOONG64',
         ],
       }],
+      ['v8_target_arch=="sparc64"', {
+        'defines': [ 'V8_TARGET_ARCH_SPARC64' ],
+        'cflags': [ '-mcpu=v9', '-ffp-contract=off' ],
+      }],
       ['v8_target_arch=="s390x"', {
         'defines': [
           'V8_TARGET_ARCH_S390',

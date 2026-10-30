@@ -1,0 +1,48 @@
+{
+  "objective": "Close the remaining Node feature gaps, starting with Amaro, while preserving the current validated checkpoint",
+  "parent_checkpoint": "node-wasm-production-20261029T234057.721541Z",
+  "parent_manifest_sha256": "3df269cf8395ac0673cdeadd8c2813222715a03b44e33f58cc36913cd62c269f",
+  "milestones": [
+    {
+      "name": "Built-in Amaro TypeScript execution",
+      "status": "feature_validated",
+      "upstream_tests": 39,
+      "upstream_skips": 0,
+      "application": "HTTP/fetch with four direct TypeScript workers; cold/warm caches and parent negative control pass",
+      "validated_feature_label": "features-isolated"
+    },
+    {
+      "name": "Native Temporal API with Rust implementation and timezone support",
+      "status": "feature_validated",
+      "rust_library": "Native SPARCV9 release archive integrated; separate archive isolates 56 weak libm exports without changing raw Cargo output",
+      "node_tests": 3,
+      "test262_executions": 13056,
+      "application": "Oslo DST scheduling in main/four workers; normal and heap-verifying compaction profiles",
+      "remaining": "Feature and inherited audits pass; checkpoint sealing and independent verification remain",
+      "validated_feature_label": "features-isolated"
+    },
+    {
+      "name": "Node FFI calls, callbacks, memory access and optimized call paths",
+      "status": "feature_validated",
+      "native_trampoline_probe_checks": 135,
+      "node_integration": "FFI suite and separately derived BE controls pass the feature audit; obsolete upstream BE arity failure and skip guards retained",
+      "fast_native_calls": 128,
+      "fast_native_proof": "Compiler FastApiCall graphs and native JIT return-address checks; eight-argument ABI, public wrapper, GC and library closure",
+      "shared_buffer_checks": 31,
+      "validated_feature_label": "features-isolated"
+    }
+  ],
+  "acceptance": [
+    "All three features enabled together in the final native Node build",
+    "Relevant unchanged upstream Node and V8 tests run without feature-disabled skips",
+    "Real TypeScript applications, Temporal timezone/DST arithmetic, native library and callback integration",
+    "Preserved Wasm production, Node, JavaScript JIT, GC/deopt, snapshot/cache, RegExp and application regression gates",
+    "Current validated parent sources, binaries and checkpoint verified unchanged",
+    "Final source/binary/test evidence sealed and independently verified on T7 and locally"
+  ],
+  "policy": "Do not close this goal after Amaro alone. No upstream publication without human review.",
+  "known_remaining": [
+    "Seal node-features checkpoint and independently verify all artifacts and source overlays on T7 and locally; verify immutable parent remains unchanged"
+  ],
+  "build_configuration": "--v8-enable-verify-heap persists in config.gypi; generated compiler definitions verified before and after ordinary makefile regeneration"
+}

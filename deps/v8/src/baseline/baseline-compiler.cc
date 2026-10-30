@@ -43,6 +43,8 @@
 #include "src/baseline/arm/baseline-compiler-arm-inl.h"
 #elif V8_TARGET_ARCH_PPC64
 #include "src/baseline/ppc/baseline-compiler-ppc-inl.h"
+#elif V8_TARGET_ARCH_SPARC64
+#include "src/baseline/sparc64/baseline-compiler-sparc64-inl.h"
 #elif V8_TARGET_ARCH_S390X
 #include "src/baseline/s390/baseline-compiler-s390-inl.h"
 #elif V8_TARGET_ARCH_RISCV64
@@ -597,7 +599,7 @@ void BaselineCompiler::VerifyFrame() {
       __ JumpIfSmi(scratch, &is_smi);
       __ JumpIfObjectTypeFast(kEqual, scratch, FEEDBACK_VECTOR_TYPE, &is_ok);
       __ Bind(&is_smi);
-      __ masm()->Abort(AbortReason::kExpectedFeedbackVector);
+      __ masm() -> Abort(AbortReason::kExpectedFeedbackVector);
       __ Bind(&is_ok);
     }
 

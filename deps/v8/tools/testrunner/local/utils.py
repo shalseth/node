@@ -199,6 +199,8 @@ def DefaultArch():
     return 's390'
   elif machine == 'ppc64':
     return 'ppc'
+  elif machine == 'sparc64':
+    return 'sparc64'
   else:
     return None
 

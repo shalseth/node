@@ -359,6 +359,51 @@ void JumpTableAssembler::SkipUntil(int offset) {
   DCHECK_EQ(offset, pc_offset());
 }
 
+#elif V8_TARGET_ARCH_SPARC64
+void JumpTableAssembler::EmitLazyCompileJumpSlot(uint32_t func_index,
+                                                 Address lazy_compile_target) {
+  static_assert(kWasmCompileLazyFuncIndexRegister == l0);
+  emit<uint32_t>(0x83414000);  // rd %pc, %g1
+  emit<uint32_t>(0xe0006014);  // lduw [%g1 + 20], %l0
+  emit<uint32_t>(0xc2586018);  // ldx [%g1 + 24], %g1
+  emit<uint32_t>(0x81c06000);  // jmpl %g1, %g0
+  emit<uint32_t>(0x01000000);  // nop (delay slot)
+  emit<uint32_t>(func_index);
+  emit<Address>(lazy_compile_target);
+}
+
+bool JumpTableAssembler::EmitJumpSlot(Address target) {
+  intptr_t displacement = target - (pc_ + kInstrSize);
+  if (!is_int32(displacement) || (displacement & 3)) return false;
+  // Only the call word changes when a live slot is retargeted. Preserve the
+  // incoming link in the delay slot, as in MacroAssembler::Jump.
+  emit<uint32_t>(0x8810000f);  // mov %o7, %g4
+  emit<uint32_t>(0x40000000 | ((displacement >> 2) & 0x3fffffff),
+                 kRelaxedStore);
+  emit<uint32_t>(0x9e100004);  // mov %g4, %o7 (delay slot)
+  emit<uint32_t>(0x01000000);
+  return true;
+}
+
+void JumpTableAssembler::EmitFarJumpSlot(Address target) {
+  emit<uint32_t>(0x83414000);  // rd %pc, %g1
+  emit<uint32_t>(0xc2586010);  // ldx [%g1 + 16], %g1
+  emit<uint32_t>(0x81c06000);  // jmpl %g1, %g0
+  emit<uint32_t>(0x01000000);
+  emit<Address>(target);
+  emit<uint32_t>(0x01000000);
+  emit<uint32_t>(0x01000000);
+}
+
+void JumpTableAssembler::PatchFarJumpSlot(WritableJitAllocation& jit_allocation,
+                                          Address slot, Address target) {
+  jit_allocation.WriteValue(slot + 16, target, kRelaxedStore);
+}
+
+void JumpTableAssembler::SkipUntil(int offset) {
+  DCHECK_EQ(offset, pc_offset());
+}
+
 #elif V8_TARGET_ARCH_S390X
 void JumpTableAssembler::EmitLazyCompileJumpSlot(uint32_t func_index,
                                                  Address lazy_compile_target) {

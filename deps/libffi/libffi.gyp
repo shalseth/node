@@ -81,6 +81,16 @@
             ],
           },
         }],
+        ['target_arch == "sparc64" and OS == "linux"', {
+          'variables': {
+            'libffi_arch_sources': [
+              'src/sparc/ffi.c',
+              'src/sparc/ffi64.c',
+              'src/sparc/v8.S',
+              'src/sparc/v9.S',
+            ],
+          },
+        }],
         ['target_arch == "riscv64"', {
           'variables': {
             'libffi_arch_sources': [

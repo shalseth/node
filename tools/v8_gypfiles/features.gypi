@@ -352,7 +352,7 @@
         'defines': ['V8_ENABLE_FUTURE',],
       }],
       ['v8_enable_lite_mode==1', {
-        'defines': ['V8_LITE_MODE',],
+        'defines': ['V8_LITE_MODE', 'V8_JITLESS',],
       }],
       ['v8_enable_gdbjit==1', {
         'defines': ['ENABLE_GDB_JIT_INTERFACE',],

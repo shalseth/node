@@ -338,7 +338,8 @@ class MultiMappedAllocator : public ArrayBufferAllocatorBase {
         mmap(nullptr, rounded_length, prot, flags | MAP_NORESERVE, -1, 0);
 #endif
     if (reinterpret_cast<intptr_t>(virtual_alloc) == -1) {
-      if (errno == ENOMEM) {
+      // SPARC also rejects oversized virtual mappings with EINVAL.
+      if (errno == ENOMEM || errno == EINVAL) {
         // Undo earlier, successful mappings.
         munmap(real_alloc, kChunkSize);
         return nullptr;

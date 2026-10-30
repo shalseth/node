@@ -38,6 +38,9 @@ static constexpr bool kUnalignedReadSupported = false;
 #else
 static constexpr bool kUnalignedReadSupported = true;
 #endif  // RISCV_HAS_NO_UNALIGNED
+#elif V8_TARGET_ARCH_SPARC64
+#include "src/regexp/sparc64/regexp-macro-assembler-sparc64.h"
+static constexpr bool kUnalignedReadSupported = false;
 #else
 #error Unsupported target architecture.
 #endif

@@ -119,7 +119,7 @@ class V8_EXPORT_PRIVATE SegmentedTable {
   // A segmented table uses simple, singly-linked lists to manage free entries.
   // Each entry on the freelist contains the 32-bit index of the next entry. The
   // last entry points to zero.
-  struct FreelistHead {
+  struct alignas(uint64_t) FreelistHead {
     constexpr FreelistHead() : next_(0), length_(0) {}
     constexpr FreelistHead(uint32_t next, uint32_t length)
         : next_(next), length_(length) {}

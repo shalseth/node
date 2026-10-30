@@ -26,6 +26,8 @@
 #include "src/codegen/s390/assembler-s390-inl.h"
 #elif V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_RISCV64
 #include "src/codegen/riscv/assembler-riscv-inl.h"
+#elif V8_TARGET_ARCH_SPARC64
+#include "src/codegen/sparc64/assembler-sparc64-inl.h"
 #else
 #error Unknown architecture.
 #endif

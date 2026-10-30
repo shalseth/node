@@ -22,6 +22,7 @@
 #include "src/logging/log.h"
 #include "src/objects/backing-store.h"
 #include "src/objects/js-array-buffer-inl.h"
+#include "src/objects/js-regexp-inl.h"
 #include "src/objects/maybe-object.h"
 #include "src/objects/objects-body-descriptors-inl.h"
 #include "src/objects/objects.h"
@@ -253,7 +254,7 @@ int Deserializer<IsolateT>::WriteExternalPointer(Tagged<HeapObject> host,
   DCHECK(!next_reference_is_weak_ && !next_reference_is_indirect_pointer_ &&
          !next_reference_is_protected_pointer);
 
-  #ifdef V8_ENABLE_SANDBOX
+#ifdef V8_ENABLE_SANDBOX
   ExternalPointerTable::ManagedResource* managed_resource = nullptr;
   ExternalPointerTable* owning_table = nullptr;
   ExternalPointerHandle original_handle = kNullExternalPointerHandle;
@@ -583,7 +584,7 @@ void Deserializer<Isolate>::PostProcessNewJSReceiver(
                                     ? ResizableFlag::kResizable
                                     : ResizableFlag::kNotResizable;
       buffer->Setup(shared, resizable, bs, main_thread_isolate(),
-                    buffer->views());
+                    buffer->views_or_detach_key());
     }
   } else if (InstanceTypeChecker::IsJSDate(instance_type)) {
     Cast<JSDate>(*obj)->UpdateFieldsAfterDeserialization(main_thread_isolate());
@@ -678,6 +679,15 @@ void Deserializer<IsolateT>::PostProcessNewObject(DirectHandle<Map> map,
     } else {
       code->UpdateInstructionStart(main_thread_isolate(),
                                    code->instruction_stream());
+    }
+  } else if (InstanceTypeChecker::IsIrRegExpData(instance_type)) {
+    Tagged<IrRegExpData> data = TrustedCast<IrRegExpData>(raw_obj);
+    if (!deserializing_user_code() &&
+        data->type_tag() == RegExpData::Type::IRREGEXP) {
+      // Startup snapshots may use different RegExp tiering flags.
+      data->set_ticks_until_tier_up(v8_flags.regexp_tier_up
+                                        ? v8_flags.regexp_tier_up_ticks
+                                        : JSRegExp::kUninitializedValue);
     }
   } else if (InstanceTypeChecker::IsSharedFunctionInfo(instance_type)) {
     Tagged<SharedFunctionInfo> sfi = Cast<SharedFunctionInfo>(raw_obj);

@@ -1,0 +1,1951 @@
+V8 SPARC64 bring-up
+==================
+
+Baseline: Node v26.12.1, bc2e01dcf6acd5cf7d169b5f26cf89abaaeb41f1 Bundled
+V8: 14.6.202.34. Merge future updates from upstream/v26.x.
+
+Sparkplug development checkout:
+/home/stian/git/sparc/node-sparc64-jit
+/root/node-sparc64-jit on T7
+
+The preserved jitless checkout remains at node-sparc64 on both hosts.
+Read the parent workspace's CLAUDE.md and this repository's AGENTS.md.
+Keep port changes local until the user approves publication. Upstreaming
+is deferred until the port is stable, passes its tests, and has working
+JIT. The jitless V8 and Node application milestones below were reached
+on 2026-10-26. See the Sparkplug section at the end for the development
+configuration and its separate validation. The hardening checkpoint and current baseline Wasm milestone are
+documented in the final sections.
+
+Validation as of 2026-10-26
+-------------------------
+
+T7, GCC 16.2.1: 94/94 assembler and macro assembler tests passed with
+--full. x64, GCC 13.3.0: 5/5 portable encoder/register tests passed. T7
+log: out/sparc64-full-assembler-test.log Available disk: local 54 GB; T7
+177 GB.
+
+Native mksnapshot completes snapshot generation, and the normal d8 target
+builds a 23 MB executable. d8 --jitless executes JavaScript on T7. The full
+standard mjsunit runner selected 6,412 applicable cases in the jitless
+variant: all succeeded, with zero unexpected failures. The runner applied
+upstream build/variant exclusions plus five feature-applicability exclusions:
+three denormal-flushing tests (the SPARC FPU helper has no flush-to-zero
+support) and two Temporal regressions when Temporal is disabled. Runtime
+JIT is disabled; eight JIT-only entrypoints retain explicit jitless trap
+guards described below.
+
+Logs: out/sparc64-d8-build.log, out/sparc64-full-assembler-test.log,
+out/sparc64-mjsunit-jitless.log, out/sparc64-mjsunit-jitless.json.
+The earlier diagnostic run selected 6,417 cases and found ten failures.
+The five applicable failures were fixed by capturing Linux SPARC sigcontext
+and its spilled V8 FP for the sampler, using unaligned JSON word reads,
+and handling EINVAL from oversized virtual mappings. All five targeted
+regressions passed before the complete final run.
+
+The native tests compare 85 instruction words with GNU assembler and
+execute generated code. Coverage includes integer arithmetic, ICC/XCC,
+delay slots and annul, big-endian load widths, FP arguments and upper FP
+registers, C stack and mixed arguments, 256-level C++ reentry, CASX, PC-
+relative literals, forward/backward label fixups, buffer growth and
+literal patching. All builtin interface-descriptor argument registers are
+checked for duplicates and reserved-register use.
+
+The macro assembler uses flat internal calls and l5 as the unbiased V8
+frame pointer, preserving native i6. Its stack operand and Move helpers
+account for the SPARC stack bias plus the 176-byte native spill/argument
+area below the logical V8 stack. Common, typed and standard frames store
+actual caller PCs (o7 + 8), matching V8's frame constants. The recursive
+frame test now uses these helpers and the C-call bridge; C++ forces FLUSHW
+and walks the frame chain at depths 0, 1, 8, 64 and 256.
+
+The fast C-call bridge aligns the native stack, opens a register window,
+passes up to 256 integer arguments through six registers and stack slots,
+restores the original stack and preserves native i6. Native stack
+arguments stay below the parent window's spill area. The bridge copies l7
+into the native window so regexp interpreter trampolines can access V8's
+root data. It records the caller FP/PC through V8's actual IsolateData
+offsets and clears the FP on return. Tests check both stack alignments,
+all six argument registers, two-register C++ return values, metadata
+visible from C++, and exact SP restoration using synthetic root storage.
+This fast-call path cannot trigger GC; runtime CEntry uses a separate
+exit-frame call path described below. Actual isolate/GC integration
+remains pending. The macro C-call bridge has executable stack-
+argument checks, including a forced window flush and the last argument of
+a 256-argument call. Mixed FP C arguments still have only low-level
+encoder tests; simplified C linkage rejects FP signatures, as on PPC.
+Floating-point operations include unary double arithmetic and all 16
+predicates on each of four FCC registers, including NaNs and signed zero.
+Register shifts check width/count masking. Unaligned integer memory tests
+cover 1/2/4/8-byte big-endian accesses at all byte alignments, signed
+extension, large displacements and base/value aliasing. Float32 bit moves
+cover all 16 single-register pairs; float64 moves cover all 32 double
+registers. Tests preserve signed zero, infinities, subnormals and signaling
+and quiet NaN payloads without arithmetic conversion. FP memory tests
+check positive/negative large displacements and untouched adjacent bytes.
+The compiler branch helper executes in native tests across signed and
+unsigned 32/64-bit comparisons with dirty upper word bits, add/sub overflow,
+and float32/float64 ordered/unordered predicates. Native single-precision
+arithmetic is checked against GCC, including NaNs, infinities and signed
+zero. The float32 selector marks comparisons and negation as single
+precision rather than inheriting PPC's internal double representation.
+
+The compiler constructs common, typed and JS frames, allocates spills,
+saves requested callee registers, initializes tagged slots, and restores
+frames on return. JS returns drop the larger of the actual and formal
+argument counts; stub returns also handle dynamic argument popping. Tail
+calls restore the caller FP/PC and adjust SP around gap moves. Native C
+entry uses SAVE/RESTORE, remaps six arguments into the compiler's outgoing
+registers, and shifts incoming stack-argument accesses by the extra
+176-byte native frame. Native tests call a generated C entry with eight
+arguments, force window spills through a C++ callback, check two-register
+returns, and verify tail-frame state and dynamic stack dropping. OSR and
+native C tail calls remain unsupported. The frame emitter object compiles
+through the production GYP graph; no full compiler-generated builtin has
+executed yet.
+
+The full assembler and shared assembler, relocation and register-config
+sources pass native syntax checks. The assembler, base assembler, shared
+assembler and relocation objects also build through the real GYP graph.
+The complete v8_base_without_compiler static library builds on T7 through
+the production GYP graph, including the new macro assembler, frame
+accessors and unwinder source. Build log: out/sparc64-base-build.log.
+Postmortem metadata remains enabled; its wasm-only Map field is guarded in
+the generator so the lite build can compile. Native Torque, v8_libbase and
+generated Torque/bytecode headers build. Production macro object log:
+out/sparc64-macro-gyp-build.log.
+
+Node and d8 now build and execute on SPARC64; see the application results below.
+The snapshot compiler source set always selects the real
+compiler, matching GN even when runtime TurboFan is disabled, and
+directly depends on Abseil. Its architecture-independent sources now
+build into libv8_compiler_for_mksnapshot_source_set.a on T7. The SPARC
+instruction selector now compiles through the production GYP graph, with
+191 selector visitor/helper definitions. It uses signed 13-bit
+immediates, explicit unaligned-access markers and conservative machine-
+operator flags. SIMD is not advertised. The new instruction scheduler
+disables reordering during bring-up.
+
+The SPARC code-generator source implements register/stack and constant
+moves, swaps, and temporary stack slots for the gap resolver. Float32
+moves use the even single lane of each logical FP register and preserve
+raw bits. Heap-object constants use the shared root/constants table when
+generating isolate-independent code; numeric constants use Smi values or
+deferred heap-number allocation. The code-generator and scheduler
+objects compile through the production GYP graph. This now implements
+the first scalar instruction-dispatch pass: integer arithmetic and
+shifts, integer/FP comparisons, scalar loads/stores, unaligned accesses,
+float32/float64 arithmetic and bitcasts, stack argument pushes,
+frame/root addresses, stack checks and switch dispatch. Atomic scalar
+loads/stores use full memory barriers. Unsupported opcodes fail
+explicitly during generation; some floating-point conversions, rotations,
+and several call variants remain incomplete.
+Frame construction and returns are implemented for the current non-OSR
+build. Compiler-generated builtins execute in native d8. Logs:
+out/sparc64-code-generator-build.log and out/sparc64-move-macro-
+build.log.
+
+The native mksnapshot executable now builds and links (43 MB on T7). Its
+builtin initialization interfaces include strict alignment, Smi moves, root-table
+indirection for isolate-independent external references and native entry/exit
+helpers. The old inventory out/sparc64-missing-backend-symbols.txt predates the
+selector/code-generator implementation. The current missing builtin-symbol
+inventory out/sparc64-missing-builtins.txt is empty. Build log:
+out/sparc64-mksnapshot-build.log.
+
+Native entry/exit, the selected builtin compiler backend, snapshot
+serialization and jitless JavaScript execution now work. Dedicated GC/ABI
+stress and runtime JIT remain later milestones.
+Branch fixups currently check displacement bounds; long-branch trampolines
+are pending.
+
+Commands
+--------
+
+Run from the Node checkout:
+
+    python3 tools/sparc64/test-assembler.py
+
+Requires a C++20 compiler, Python and Ninja. CXX selects the compiler. The
+driver builds incrementally with four jobs. Arguments are forwarded to
+GoogleTest, for example --gtest_filter=... . The default target runs 5
+tests on x64 or 20 on native SPARC64 without a working isolate.
+
+Prepare generated headers and libraries on native T7:
+
+    sh tools/sparc64/configure.sh
+    make -C out -j96 BUILDTYPE=Release torque v8_libbase
+    make -C out -j96 BUILDTYPE=Release run_torque generate_bytecode_builtins_list
+    make -C out -j96 BUILDTYPE=Release v8_base_without_compiler
+    make -C out -j96 BUILDTYPE=Release v8_compiler_for_mksnapshot_source_set
+    python3 tools/sparc64/check-assembler.py
+    python3 tools/sparc64/test-assembler.py --full
+
+The --full target runs 81 tests and links the real V8 assembler, flag,
+allocation, macro assembler and CPU sources with v8_libbase/Abseil. It
+uses V8_JITLESS, LTO and section garbage collection to avoid unrelated
+engine dependencies; it does not provide replacement runtime
+implementations. Its output is in out/sparc64-assembler-full. The default
+output is out/sparc64-assembler.
+
+The configure script disables runtime compiler tiers, Intl, Temporal and
+unneeded Node dependencies during bring-up. Lite mode defines both
+V8_LITE_MODE and V8_JITLESS, matching upstream GN's readonly jitless
+build. SPARC64 regexp execution uses the existing bytecode interpreter.
+The native regexp assembler is pending; its native stack-guard reference
+is omitted from the SPARC64 jitless reference table rather than replaced
+by a stub. The builtin compiler backend builds; its instruction emission remains incomplete. GN source
+lists and Node GYP source selection include the new assembler files; a
+standalone GN toolchain is pending. The test runner recognizes sparc64,
+but its generated build metadata still needs integration with the Node GYP
+build before mjsunit can run.
+
+Use itx t7 -c '...' for native work. The wrapper returns success even when
+the remote command fails: use set -e and check an explicit success marker.
+Use T7 despite its existing load, as requested. For large native builds,
+start at -j96. Check free disk before downloads/builds; /tmp shares the
+root filesystem on the development host and T7.
+
+For isolated native checks during a large build, SPARC64_SOURCE_OVERLAY
+may name a directory containing replacement V8 paths (src/...,
+include/..., etc.). The test driver places that include directory first
+and selects replacement source files when present, sharing the main
+generated headers and libraries. It writes to
+out/sparc64-assembler[-full]-overlay. This avoids modifying headers used
+by another live build. The last default --full run passed 94/94; an
+earlier overlay run passed 43/43 before the native root-register
+propagation check.
+The full mksnapshot rebuild after adding compiler frames and returns
+reached linking. The compiler backend objects build in the production
+archive; remaining link failures included assembly builtins, deoptimizer
+accessors, the cppgc register scanner, and missing Maglev graph-building
+sources. GYP's common compiler source selection now includes GN's
+!v8_enable_maglev source set, which Turboshaft needs even without Maglev
+code generation. The generic graph builder declares SPARC64's hardware
+rounding and CLZ capabilities unavailable, selecting existing fallback
+paths. mksnapshot now links and the normal d8 target runs it for snapshot
+creation. Code-object calls/tail calls, caller-register saves/restores, and
+C calls now compile. SPARC64 uses the restrictive load/store normalization
+needed by its selector; this removed a crash during builtin compilation.
+The next missing emitter was ArchStoreWithWriteBarrier. The new emitter
+uses the native barrier helper with dynamic slot addresses and ephemeron
+key handling. Snapshot compilation then reached multiplication with a high
+32-bit result and unsigned 64-bit-to-double conversion. Both are now
+implemented, along with signed/unsigned 32/64-bit integer conversions to
+float32/float64. Float-to-integer truncation now handles signed/unsigned
+32/64-bit results, optional success outputs, and float32 inputs for try
+conversions. Raw double-word extraction/construction and software CLZ32/64
+are also implemented. All 94 native tests pass, including 33,400
+integer-to-float comparisons against C++ casts, truncation boundaries,
+multiplication register-overlap cases, and the expanded barrier checks.
+NaN quieting preserves payloads and non-NaN bits. Float32/float64 width
+conversions use native FSTOD/FDTOS instructions; tests cover subnormal
+values, signed zero, infinities, NaNs, and register aliases. Math operations
+use the native C bridge with fixed FP argument/result registers. Native
+tests cover unary/binary/modulo calls, window flushing and stack alignment.
+High-word multiplication and signed/unsigned division/remainder now cover
+32/64-bit operands, register aliases, and overflow/zero-divisor boundaries.
+Typed-array atomic RMW operations use CASX loops preserving adjacent
+big-endian lanes; native checks cover every width/operation and eight-thread
+contention, including unique fetch-add return values. Snapshot compilation
+also uses the dynamic builtin-entry-table emitter and float32/float64
+minimum/maximum with correct NaN and signed-zero handling. All currently
+selected snapshot builtin instructions compile. Snapshot generation,
+embedded assembly, d8 linking and JavaScript execution now succeed.
+Build log: out/sparc64-d8-build.log; first full mjsunit run:
+out/sparc64-mjsunit-first.log and out/sparc64-mjsunit-first.json. Final
+passing run: out/sparc64-mjsunit-jitless.log/.json.
+
+The SPARC deoptimizer source is now selected by GN/GYP and builds into the
+production base archive. Saved float32 state reads the first word of each
+big-endian saved double, preserving NaN bits. Native tests exercise saved
+register reads, forward/backward deopt jump patches, and code zapping that
+preserves embedded-object relocation slots using the real relocation
+writer and iterator. Jump patching currently uses BA plus a delay-slot NOP
+and checks the +/-8 MB displacement bound. Native snapshot generation now finalizes and serializes code; the relocation test constructs its stream
+with RelocInfoWriter rather than finalizing a heap Code object.
+
+The native cppgc register scanner opens a register window, executes
+FLUSHW, and passes an unbiased stack marker to the callback. Its native
+test clears the caller's spill area before placing distinct values in
+local/input registers and verifies all sixteen saved window registers in
+the callback, including native FP/PC. The scanner is selected in GN and
+GYP's host/target heap-base source lists and resolves in mksnapshot.
+
+The SPARC disassembler implements the common NameConverter and
+Disassembler interfaces, including the scalar integer/FP instructions
+emitted so far, native upper double-register encodings, signed memory
+displacements, ICC/XCC/FCC branches, prediction/annul bits and CASX. Unknown
+words print as raw data. Tests decode all 85 GNU assembler reference
+words and check representative operand/condition text. Its production
+object builds and resolves the disassembler linker symbols. The portable
+syntax check also passes with warnings treated as errors and the same
+shared-header comment suppression used by the test driver.
+
+JavaScript entry builtins are now selected in GN and GYP and compile into
+the production initializer archive: JSEntry, JSConstructEntry,
+JSRunMicrotasksEntry and RunMicrotasksTrampoline. The native entry window
+preserves C callee state and remaps the six incoming arguments for the
+internal trampoline. Entry frames save/clear/restore C-entry and fast-call
+metadata, track outermost versus nested entry, and link an unbiased handler
+record. The shared exception landing pad records the exception and returns
+the exception root sentinel; the epilogue works with FP cleared by unwinding.
+
+Native tests execute the entry frame and handler helpers, preserve all five
+non-root C arguments, inspect metadata from C++ after FLUSHW, mutate it to
+check restoration, exercise a cleared-FP handler-unwind path, and reenter
+through a nested construct entry from C++. The builtin wrappers pass native
+syntax checking and production compilation. Native d8 now executes builtins and bytecode handlers through these entry
+paths. The broad mjsunit run provides VM-level validation; dedicated
+GC-stress coverage remains separate. CEntry is described below.
+
+CEntry now compiles into the production initializer archive for stack and
+register argv, one/two-register results, and ordinary/builtin exit frames.
+It passes argc/argv/isolate to native C++, tests the exception sentinel,
+restores context and drops stack arguments on normal return. Exceptions
+call the existing no-GC runtime handler search and jump through its pending
+context/FP/SP/entrypoint metadata. FP-only handlers retain a valid native
+SP until the handler resets it, avoiding an invalid window spill area.
+
+The exit-frame helpers publish an initialized saved-SP/PC slot before the
+C-entry FP. Their native call helper records the actual C-call continuation
+PC where ExitFrame::FillState expects it, aligns/open/restores a native
+window, passes register/stack arguments, and preserves two-register results.
+As in the PPC helper, a GC-capable call requires an immovable call site;
+this applies to the embedded CEntry builtin. The separate fast-call helper
+retains its no-GC contract.
+
+Native checks cover five exit-frame types, both stack alignments, extra
+stack space, exact return-PC metadata versus GCC's extracted return address,
+context restoration, paired results, eight C arguments with FLUSHW, and
+pending-handler jumps with context, cleared FP, or no replacement SP. These
+checks use synthetic isolate fields; mjsunit adds real VM coverage.
+Dedicated moving-GC/API stress remains separate.
+
+The JavaScript entry trampolines load context, copy indirect handle arguments,
+push the receiver, initialize unused JS registers to undefined, and invoke
+Call or Construct. Runtime call helpers select the existing CEntry builtin.
+Argument-copy native tests exercise raw values and indirect handles from zero
+to 255 arguments. Stack-overflow checks use the real native SP so that the
+176-byte spill/argument area stays above the limit; tests cover signed space
+boundaries and a count register that overlaps the usual address scratch.
+
+Call dispatch now checks Smi targets, callable JS function ranges, bound
+functions, proxies, wrapped functions, class constructors and exotic callable
+objects. Construct dispatch checks the constructor bit before choosing a
+function, bound function, proxy or native-context delegate. ConstructFunction
+selects the generic or builtin construct stub from SharedFunctionInfo flags.
+Function.prototype.call/apply and Reflect.apply/construct adapt stack arguments
+and preserve upstream missing-argument and error-message behavior. These
+builtins pass native syntax checking and production compilation/link-symbol
+resolution. Native d8 and mjsunit now exercise generated code in real isolates.
+
+Function invocation now adapts missing arguments by moving the receiver and
+existing arguments down the logical stack, filling the remaining formal slots
+with undefined, and preserving actual argc, function and new.target. It keeps
+extra actual arguments and recognizes the zero-parameter no-adaptation sentinel.
+The native adaptation test checks exact stack movement, receiver/argument order,
+untouched call registers and a C++ FLUSHW probe across actual/formal counts up
+to 255. A second native test jumps through several synthetic JS dispatch-table
+entries and checks actual argc and new.target in the target code.
+
+CallFunction loads the callee context, skips receiver conversion for strict or
+native functions, replaces null/undefined with the global proxy, and uses ToObject
+for primitive sloppy receivers. Invocation supports debugger call hooks with tagged
+argument counts saved across the runtime call, and jumps/calls through the current
+JS dispatch-table entry. The debugger hook and receiver-conversion paths compile
+and now execute in real isolates. Frame restart reuses invocation with
+argument adaptation disabled; NotifyDeoptimized restores the saved accumulator.
+
+InterpreterEntryTrampoline now compiles the readonly jitless entry path: reset
+SFI age, obtain BytecodeArray or InterpreterData bytecode, fall back to runtime
+lazy compilation, select a feedback vector, build the interpreter frame and
+initialize its register file. It initializes an incoming new.target/generator
+register, performs native-spill-aware real/interrupt stack checks, dispatches
+through the interpreter handler table and records the true continuation PC.
+Returns drop the maximum of formal and actual argument counts; interrupts save
+the function-entry offset and reload bytecode state after StackGuard.
+
+The bytecode-offset helper has a native execution test covering unscaled, wide,
+extra-wide and both debug-break prefixes, ordinary operand advancement,
+Return/SuspendGenerator detection, and restoring the original prefixed JumpLoop
+offset. The test supplies known bytecode size tables to isolate the architecture
+logic; native d8 now executes real handlers as well.
+
+Interpreter call/construct argument-transfer builtins now compile, including
+implicit undefined receivers, final spread values, allocation-site feedback and
+array-constructor dispatch. They copy descending interpreter-register arguments
+to the ascending logical argument area, preserving the target, actual argc and
+construct new.target. Their emitted code now executes in native d8; see the validation results above.
+
+Interpreter re-entry now selects the default or profiling trampoline, reconstructs
+the handler return link using the saved interpreter continuation offset minus
+SPARC's eight-byte return adjustment, reloads the frame's bytecode state and
+jumps through the dispatch table without changing the accumulator. Next-bytecode
+re-entry handles the function-entry sentinel, advances through the tested size
+logic, saves the new Smi offset and rejects an invalid return-bytecode advance.
+A native test restores bytecode/offset from an interpreter-layout frame, enters
+synthetic handlers through several table entries and returns to an explicit
+continuation, checking accumulator and offset preservation. Real VM re-entry,
+profiling trampoline selection and exception-driven dispatch remain unverified.
+
+ConstructForwardAllArgs copies actual arguments from the current or parent frame,
+pushes a receiver slot and tails to Construct after checking stack space. Bound
+function call/construct helpers insert bound arguments before existing arguments,
+retain the receiver, update actual argc and preserve construct new.target. Calls
+replace this with BoundThis; construction substitutes the bound target only when
+new.target equals the bound function. They reuse the native-tested raw argument
+copy helper; full bound-function and forwarding semantics await VM execution.
+
+Variable-argument call/construct builtins allocate room for appended arguments,
+move the existing receiver/arguments to the lower logical stack, update argc,
+and copy FixedArray elements with hole-to-undefined conversion. Forwarding
+variants validate constructor new.target and copy the requested suffix of the
+caller's actual arguments. Their shared movement helper has a native test that
+checks overlap, exact SP movement, the first free slot, preserved target/list/
+new.target registers and a C++ FLUSHW probe, with existing/extra counts up to 255.
+Array-hole conversion, constructor validation and real caller-frame forwarding
+still await execution in a V8 isolate.
+
+The builtin and generic JavaScript construct stubs now build construct frames,
+preserve original arguments/context, copy outgoing arguments, and invoke the
+constructor with new.target. The generic stub allocates a receiver for base
+constructors, uses the hole for derived constructors, selects an object result
+or the saved receiver, and throws when a derived receiver remains uninitialized.
+It records the construct-create continuation for deoptimization. The interpreter
+fast-constructor entry uses the complete generic construction path, with its
+shared descriptor and argument layout; no separate fast-construct frame is
+needed for this jitless implementation. These construct paths still require
+real VM execution, GC and constructor-semantics tests.
+
+DoubleToI and the compiler's ArchTruncateDoubleToI instruction use an integer
+IEEE-754 conversion: truncate the magnitude, retain the low 32 bits, apply the
+sign and sign-extend the result. Negative exponents, NaNs/infinities and exponents
+at least 84 yield zero. Reserved GP scratch registers preserve the JS register
+set and FP input; there are no conversion instructions or runtime calls. Native
+checks compare against V8's DoubleToInt32 oracle across all exponent encodings,
+both signs, boundary fractions and 20,000 deterministic random patterns. The
+same conversion supports both FP-register input and an in-place stack slot for
+the builtin calling convention. Full compiler-generated builtin execution is
+still pending.
+
+Generator resumption now stores the input with a write barrier, restores the
+suspended function/context and parameters/receiver, supports debugger stepping,
+and dispatches with the generator object in new.target. The write-barrier helper
+checks Smi and source/destination page flags, preserves descriptor registers and
+the return link, and calls V8's existing RecordWrite builtin. Its native test
+constructs real MemoryChunk headers in aligned storage, checks flag combinations
+and Smi skips, and uses a synthetic callee that records object/slot/value and
+clobbers descriptor registers to verify restoration. Real GC marking/remembered
+sets and debugger stepping need dedicated stress coverage. Production
+compilation succeeds and mksnapshot links.
+
+API callback and named accessor/interceptor generators now compile and resolve
+in mksnapshot. The shared API return path enters/restores HandleScope state,
+selects profiling/side-effect thunks, reads the managed return-value slot,
+normalizes the not-intercepted sentinel, removes handle-scope extensions when
+needed and propagates scheduled exceptions. Calls use the existing GC-capable
+native bridge with API exit-frame metadata. Setter/name Local arguments follow
+the configured direct/indirect handle convention.
+
+A native callback-layout test passes stack data to the public FunctionCallbackInfo
+API, checks Length/GetIsolate/IsConstructCall and argument slots, verifies exit
+metadata and the exact C return PC after FLUSHW, and writes Smi 42 through
+GetReturnValue(). It exercises zero to 255 arguments and balances the caller
+stack. It does not execute the complete new builtin generators: real handle-scope
+extension cleanup, profiling thunks, accessor/interceptor calls, exceptions and
+GC inside API callbacks remain unverified. mksnapshot now links with no unresolved builtin generators.
+
+The four builtin-continuation entrypoints now restore the default configuration's
+allocatable GP registers, untag JavaScript argc, install lazy results in the
+code-stub or last JavaScript argument slot, restore caller FP/true PC and jump
+through the Smi-indexed builtin table. Native checks construct continuation
+frames for all four variants, exercise two distinct builtin indices and argument
+counts through 64, inspect all restored registers and argument slots, and execute
+the final return to the original continuation. The test driver links the real
+register-configuration implementation. Integration with deoptimizer-produced
+frames, GC and optimized JavaScript remains unverified.
+
+DirectCEntry now has a native bridge for movable callers: g5 supplies the C
+function and g4 its argument-slot count. The caller reserves its exit-frame PC
+slot and outgoing stack slots. The bridge stores o7+8 in the GC-visible PC slot,
+opens an aligned native window sized for stacked arguments, forwards six GP
+registers plus stacked slots, preserves paired results and restores the exact
+old SP. It reloads the caller PC from the slot before returning, so a GC update
+can redirect the return. Native tests cover 0/6/8/256 arguments, both stack
+alignments, FLUSHW, context restoration and a C callback that changes the return
+slot to another continuation. This simulates a PC update; actual code movement
+under V8 GC remains unverified.
+
+The current port is restricted to the configured readonly V8_JITLESS build.
+Eight baseline, OSR and deoptimizer entrypoints are guarded with explicit traps
+for that configuration, and non-jitless generation is rejected. Their full JIT
+implementations remain future work; they must not be counted as JIT support.
+The complete continuation implementations described above are retained.
+
+Running mjsunit on the T7 GYP build
+----------------------------------
+
+From /root/node-sparc64:
+
+    python3 tools/sparc64/write-test-config.py
+    cd deps/v8
+    python3 -u tools/run-tests.py --outdir=../../out/Release \
+      --variants=jitless --no-presubmit -j32 --progress=verbose \
+      --exit-after-n-failures=0 \
+      --json-test-results=/root/node-sparc64/out/sparc64-mjsunit.json mjsunit
+
+The metadata helper derives enabled features from the Release GYP
+definitions and rejects changes to the audited upstream metadata schema.
+The runner applies upstream build/variant exclusions. Added exclusions
+cover only the unsupported SPARC flush-to-zero helper and two Temporal
+regressions when Temporal is disabled. Crashes and incorrect results in
+applicable tests remain unexpected failures.
+
+Node application milestone
+--------------------------
+
+Reached on T7, 2026-10-26. The current out/Release/node is a 57 MB jitless
+Node v26.12.1 with npm 11.20.0, system OpenSSL 3.6.5 and ICU 78.3. It links
+libssl.so.3, libcrypto.so.3, libicui18n.so.78, libicuuc.so.78 and
+libicudata.so.78. No runtime JIT was enabled.
+
+Build:
+
+    sh tools/sparc64/configure-node.sh
+    make -C out -j96 BUILDTYPE=Release node
+
+Seven selected Node tests passed in the initial minimal build: Buffer float
+reads/writes, filesystem promises, HTTP headers, ESM imports, worker data,
+and child-process execFile. Each took under 0.5 seconds. That batch used
+15-second per-test and 120-second overall limits. The minimal node/d8 and
+configuration are preserved at out/sparc64-jitless-minimal/. The full V8
+mjsunit result above covers that minimal configuration; the application
+configuration has the targeted validation described here.
+
+Reproduce the application checks:
+
+    timeout 180 sh tools/sparc64/test-apps.sh
+
+Validated with the application configuration:
+
+- npm CLI and registry package installation over HTTPS. npm installed
+  92 packages in 7 seconds; the final locked npm ci run took 8 seconds.
+- Intl.NumberFormat using ICU.
+- Express 5.3.0: verified localhost HTTPS, JSON request/response with
+  Unicode payloads, and a known SHA-256 result.
+- ws 8.22.0: secure WebSocket echo with payload and clean-close checks.
+- http-server 14.1.1: the published CLI served a static file correctly.
+
+The package manifest and lockfile are kept in tools/sparc64/apps/. The
+script uses npm ci with install scripts and optional dependencies disabled,
+creates a short-lived localhost test certificate, and checks its trust and
+hostname normally. Application deadlines are 20 seconds, package
+installation is limited to 90 seconds, and the overall command is capped
+at 180 seconds. No benchmark, pummel, long stress loop or full Node suite
+was run for this milestone.
+
+Logs: out/sparc64-node-configure.log, out/sparc64-node-build.log,
+out/sparc64-node-first-start.log, out/sparc64-node-core-smoke.log, and
+out/sparc64-node-app-smoke.log.
+
+Remaining limitations: runtime JIT and WebAssembly are disabled, as are
+Temporal, FFI, bundled Amaro/TypeScript stripping, the Node startup
+snapshot and Node code cache. A bounded native Node-API addon/GC check now passes; broader third-party
+addons and Node conformance/stress have not been validated. This is evidence that useful
+applications run, not a claim of full production readiness. Future V8
+test runs should regenerate metadata for the current feature build with
+python3 tools/sparc64/write-test-config.py. All changes remain local and
+uncommitted.
+
+Pre-Sparkplug checkpoint and readiness review
+-------------------------------------------
+
+The bounded native-addon check passed on T7:
+
+    timeout 65 sh tools/sparc64/test-addon-gc.sh
+
+It builds a small shared Node-API addon against this checkout's headers,
+without node-gyp downloads. Ten native callbacks include nested JS/native
+reentry and exception propagation. Sixteen synchronous major collections
+request compaction with --compact-on-every-full-gc, and six minor
+collections exercise live objects and new fields after promotion. Native
+register windows are flushed around callbacks; strong references, local
+handles, escaped results, original exception identity and named JS stack
+frames are checked. The test allocates enough native handles to span
+handle blocks and uses six outer rounds. The JS portion took 409 ms.
+Compilation and execution each have a 30-second limit. Evidence:
+out/sparc64-addon-gc.log. This does not validate movement or patching of
+new JIT InstructionStreams; that is a separate acceptance gate below.
+
+Review findings and inventory:
+
+    python3 tools/sparc64/write-test-config.py
+    timeout 75 python3 tools/sparc64/inventory-jit.py
+
+The inventory uses the native Release preprocessor definitions and include
+paths, expanding opcode macros and filtering selector definitions by the
+current build. It records 225 emitted cases out of 489 declared opcodes,
+264 declarations without an emitter, twenty compiled whole-body selector
+guards, and the eight guarded builtins. The missing declarations include
+SIMD, optional operators, optimizer operations and alternate atomic
+opcodes; they are not all required for Sparkplug. Intentional guards
+remain valid when machine capability flags force earlier lowering.
+Conditional guards inside method bodies are not included in that count.
+Output: out/sparc64-jit-inventory.json.
+
+The two baseline architecture files are absent:
+
+- deps/v8/src/baseline/sparc64/baseline-assembler-sparc64-inl.h
+- deps/v8/src/baseline/sparc64/baseline-compiler-sparc64-inl.h
+
+Both shared baseline architecture include switches lack SPARC64 branches.
+The SPARC64 BUILD.gn header list and GYP architecture selection also need
+baseline entries. Reference the PPC and s390 baseline files for big-endian
+contracts, RISC-V for explicit instruction sequences, and x64 for shared
+baseline behavior and tests. Adapt their ABI assumptions to SPARC.
+
+Guarded builtin split:
+
+| Builtin | Initial Sparkplug requirement |
+| --- | --- |
+| BaselineOutOfLinePrologue | Implement entry, frame and feedback setup |
+| BaselineOutOfLinePrologueDeopt | Implement baseline-entry fallback |
+| InterpreterOnStackReplacement_ToBaseline | Implement interpreter-to-baseline frame conversion |
+| BaselineOnStackReplacement | Optimizer OSR; keep unreachable while optimizing tiers are disabled |
+| InterpreterOnStackReplacement | Optimizer OSR; keep unreachable while optimizing tiers are disabled |
+| DeoptimizationEntry_Eager | Optimizing-tier register/frame reconstruction |
+| DeoptimizationEntry_Lazy | Optimizing-tier register/frame reconstruction |
+| DeoptimizationEntry_LazyAfterFastCall | Optimizing-tier register/frame reconstruction |
+
+The current GenerateJitlessTrap helper fatally rejects non-jitless snapshot
+generation. Its treatment of unused optimizer builtins must be split from
+required baseline implementations before enabling Sparkplug. Any retained
+trap needs a verified disabled-feature gate; active paths must be real
+implementations. The baseline prologue fallback is required even when
+optimized-code deoptimization is disabled.
+
+InterpreterAssembler::OnStackReplacement can select cached baseline code
+independently of optimizer OSR. --no-use-osr alone does not establish that
+InterpreterOnStackReplacement_ToBaseline is unreachable. Implement and
+validate that path before ordinary baseline loop workloads.
+
+Sparkplug implementation checklist, in dependency order:
+
+1. [ ] Use a separate JIT checkout/build populated from the checkpoint.
+   Preserve the runnable jitless node/d8 and their configuration.
+2. [ ] Add the two SPARC baseline headers, shared include branches, and
+   GN/GYP source/header wiring, following PPC/s390. Add a separate build
+   recipe that omits --v8-lite-mode, enables Sparkplug, and explicitly
+   keeps Maglev, runtime TurboFan and WebAssembly disabled. Do not change
+   the working jitless configure recipes.
+3. [ ] Implement BaselineAssembler's required interface: register/frame
+   operands, moves, scratch scopes, loads/stores and write barriers,
+   comparisons/branches, pushes/pops, builtin/runtime calls, interrupt
+   budget checks, returns and switch dispatch. The inventory includes
+   the PPC architecture's method names as a reference, not an ABI template.
+4. [ ] Reserve scratch registers consistently with MacroAssembler's
+   implicit g1..g5 use. Preserve g6/g7, native FP i6, V8 FP l5, root l7
+   and context l6. Keep actual argc/receiver and argument-adaptation
+   conventions consistent with the existing entry and call builtins.
+5. [ ] Implement baseline compiler prologue/frame filling and frame-size
+   verification. Native SP is biased by 2047; logical V8 SP adds another
+   176 bytes. FP-based V8 slots already use unbiased l5. Lay out bytecode,
+   feedback-cell/vector and register-file slots using the shared baseline
+   constants, and handle new.target/generator registers and stack limits.
+6. [ ] Implement the three baseline-required builtins above. Audit shared
+   function info, feedback-vector, JS dispatch installation, code flushing
+   and interpreter fallback for baseline Code objects, rather than assuming
+   only BytecodeArray/InterpreterData in the jitless paths.
+7. [ ] Regenerate a non-jitless snapshot with optimizing JS tiers disabled.
+   Fix additional scalar emitters actually reached by that configuration.
+   Builtins still use the compiler backend even without runtime TurboFan;
+   the remaining backend inventory cannot all be deferred automatically.
+8. [ ] Compile and execute one small function, prove it is baseline code
+   using V8's test intrinsics/tier traces, and compare its result with
+   Ignition. Start with straight-line code, then calls/returns/branches.
+9. [ ] Validate loop backedges and interpreter-to-baseline OSR, argument
+   counts, construction, exceptions, stack traces and runtime/API calls.
+   A CALL link is instruction PC; saved return PCs are PC+8. Every control
+   transfer needs the correct delay slot.
+10. [ ] Check executable-memory permissions and instruction-cache flushing
+    for newly generated and patched code. CpuFeatures currently uses
+    __builtin___clear_cache; test actual execution after patching. Check
+    relocations and literal slots in heap-allocated Code/InstructionStream
+    objects, including PC updates while GC moves generated code.
+11. [ ] Address long-branch reach before general baseline workloads. The
+    current assembler checks branch displacement bounds but has no long
+    branch trampoline. Preserve constant/literal alignment and big-endian
+    raw bits, and retain explicit failures for unsupported cases.
+12. [ ] Run focused baseline mjsunit cases and the bounded addon/GC and
+    application smoke checks with the new tier, keeping the jitless build
+    as the reference. Expand coverage when a concrete failure or new
+    implementation justifies it. Optimizing tiers, their deoptimization
+    entries and full backend/FP C-linkage coverage are later milestones.
+
+Checkpoint creation on T7:
+
+    python3 tools/sparc64/checkpoint.py
+
+The tool creates out/checkpoints/pre-sparkplug-<UTC timestamp>/ and writes
+its path to out/sparc64-prejit-checkpoint-path.txt. It copies node/d8
+without hard links, the compiled addon, config.gypi and V8 test metadata,
+validation logs and the machine inventory. It records shared-library
+dependencies rather than bundling OpenSSL/ICU. The source overlay contains
+all changed tracked files and non-ignored untracked files; BASE_HEAD and
+tracked.patch identify the base and provide a reviewable tracked diff.
+manifest.json records source/artifact SHA-256 hashes, and SHA256SUMS
+verifies every copied artifact. The tool rejects source changes during
+checkpoint creation and creates no Git commit.
+
+Recovery: create a clean checkout/worktree of BASE_HEAD and extract
+source-overlay.tar.gz at its root. All current changes are additions or
+modifications, so no deletion step is needed. tracked.patch is for review
+or for applying tracked changes instead of the tracked overlay contents;
+do not apply both to the same files. Use the saved configure script to
+regenerate build files; config.gypi records the exact previous choices.
+Verify SHA256SUMS before using saved binaries. The checkpoint is mirrored
+to the local checkout's out/checkpoints/ directory for recovery.
+
+Sparkplug development configuration
+----------------------------------
+
+The JIT checkout was created from the verified pre-Sparkplug checkpoint,
+without changing the preserved jitless sources or binaries. Changes remain
+local and uncommitted.
+
+    sh tools/sparc64/configure-sparkplug.sh
+    make -C out -j96 BUILDTYPE=Release d8 node
+
+This configuration enables Sparkplug and disables runtime TurboFan,
+Maglev, WebAssembly, Temporal, Node snapshots/code cache, Amaro and FFI.
+It uses system OpenSSL and ICU. Regular expressions remain interpreted;
+the SPARC native regexp backend is a separate task.
+
+The SPARC baseline assembler/compiler implement frame/register access,
+scratch scopes, loads/stores and write barriers, comparisons, control flow,
+calls, interrupt budgets, returns, frame filling and switch dispatch.
+Scratch registers i3..i5 avoid MacroAssembler's implicit g1..g5 temporaries.
+Three baseline entrypoints now implement frame setup, entry fallback and
+interpreter-to-baseline OSR. Cached baseline code is installed through
+Runtime::kInstallBaselineCode before entry, including dispatch-table updates.
+In the preserved Sparkplug checkpoint, the five optimizer-only entrypoints
+retain checked guards while their compilers are disabled.
+
+Baseline branches use CALL's 30-bit PC-relative displacement. The sequence
+saves o7 in g4 and restores o7 in the delay slot, allowing wide forward
+branches and loop backedges without losing the return link. Switches use
+a compare chain; optimizing that dispatch is later work. The optimizing
+compiler backend still has its original short-branch limitations.
+
+Linux SPARC can return mmap addresses above the VA hole, such as
+0xfff8000108741021 for a tagged Code pointer. JS dispatch entries pack code
+pointers into 48 bits; that address would decode as 0x108741021. The native
+allocator now uses 40-bit page-aligned random hints and unmaps/retries
+private allocations whose full range cannot fit below 2^48. Four rejected
+placements return ENOMEM. This preserves the existing dispatch-table format.
+The standalone address test checks null, high and random hints, alignment,
+read/write access, freeing the resulting allocations and rejecting an
+oversized reservation.
+
+Bounded validation commands:
+
+    sh tools/sparc64/test-address-space.sh
+    sh tools/sparc64/test-sparkplug.sh
+    timeout 130 python3 tools/sparc64/test-sparkplug-upstream.py
+    timeout 600 python3 tools/sparc64/test-assembler.py --full
+    timeout 65 sh tools/sparc64/test-addon-gc.sh
+    timeout 180 sh tools/sparc64/test-apps.sh
+
+The upstream helper runs eight unmodified baseline cases with their own
+Flags comments: general baseline behavior, modules, cross-realm calls,
+load-IC transitions, batch compilation, baseline/bytecode flushing,
+baseline-only flushing, and source positions. Three optimizer-OSR cases
+require disabled optimizing tiers and are outside this selection. The
+custom smoke test asserts actual baseline execution and covers calls,
+arguments, branches, loops, exceptions, compaction, interpreter-to-baseline
+OSR and an 18,000-statement loop with wide backedges.
+
+The full applicable mjsunit suite runs with --variants=nooptimization, which
+disables optimizing compilers while retaining Sparkplug. The runner omits
+the variant's Wasm-only lazy-compilation flag in builds without Wasm.
+The previous 6,412-case result belongs to the preserved jitless build.
+The results in this section describe the preserved Sparkplug checkout.
+
+Sparkplug validation on T7, 2026-10-26:
+
+- 94/94 native encoder and MacroAssembler tests passed (104 ms runtime).
+- 8/8 selected upstream baseline cases passed.
+- Custom baseline-tier, wide-backedge, compaction and baseline-OSR checks passed.
+- Native page allocation regression passed, including a forced high hint and
+  an oversized reservation. The null-hint case failed before the allocator fix.
+- 7/7 targeted Node core tests passed with --always-sparkplug: Buffer float
+  reads/writes, HTTP headers, fs promises, ESM, worker data and child execFile.
+- The worker case passed 20/20 additional runs, four processes at a time,
+  with --always-sparkplug and per-process 15-second limits.
+- Node-API GC smoke passed with normal tiering and --always-sparkplug:
+  ten callbacks, sixteen major and six minor collections in each run;
+  JS portions took 282 ms and 372 ms respectively.
+- Express HTTPS/Unicode JSON/SHA-256, secure ws echo and the published
+  http-server CLI checks passed; npm ci installed the locked 92-package set.
+- Full applicable mjsunit: 6,145 cases, zero unexpected failures.
+- Forced baseline mjsunit: 6,145 cases, one unexpected failure in
+  osr-elements-kind. It assumes array literal feedback has not generalized.
+  The same test also fails with eager baseline or eager feedback allocation
+  on the local x86 Node 24/V8 13.6 control, while normal tiering and interpreter
+  controls pass. This is supporting evidence, not a same-version comparison;
+  the SPARC failure remains visible, with no new expected-failure rule.
+- Intl/message/debugger: 943 cases, two unexpected Intl output differences.
+  A standalone ICU 78.3 program reproduces the HUF zero fractional digits
+  and Casablanca GMT+0 output without V8. Assertions and expectations remain
+  unchanged. All selected message and debugger cases pass.
+- Runner flag-filter checks: 2/2; upstream TestSuite checks: 3/3.
+  The broader runner unit suite has two JSON fixture mismatches that also
+  occur with the original variant generator (37 pass, one skipped).
+
+Full-suite evidence is in sparc64-mjsunit-baseline-full.{log,json},
+sparc64-mjsunit-forced-baseline.{log,json}, and
+sparc64-extra-baseline-clean-flags.{log,json} under out/. Independent controls
+are in sparc64-feedback-x64-control.log and sparc64-icu-control.{cc,log}.
+The locale and forced-feedback differences remain unresolved test failures;
+these results do not claim an entirely green forced-baseline/Intl run.
+
+Final evidence is under out/: sparc64-sparkplug-assembler-final.log,
+sparc64-sparkplug-upstream-final.log, sparc64-sparkplug-smoke-final.log,
+sparc64-address-after-final.log, sparc64-sparkplug-node-core-final.log,
+sparc64-worker-check-final.log, sparc64-sparkplug-addon-final.log,
+sparc64-sparkplug-addon-forced-final.log and sparc64-sparkplug-apps-final.log.
+
+Preserve this bounded milestone separately from the jitless checkpoint:
+
+    python3 tools/sparc64/checkpoint.py --profile sparkplug
+
+This records the current source overlay, node/d8/addon, configuration,
+shared-library dependencies and the final Sparkplug evidence. Its manifest
+states the validation scope and outstanding failures. The path is written to
+out/sparc64-sparkplug-checkpoint-path.txt; recovery follows the same
+BASE_HEAD/source-overlay procedure as the pre-Sparkplug checkpoint.
+
+TurboFan first execution milestone
+---------------------------------
+
+The separate node-sparc64-turbofan checkout and sparc64-turbofan branch start
+from the verified Sparkplug source overlay. The parent checkpoint and its
+manifest digest are recorded in out/sparc64-turbofan-parent.json. Changes
+remain local and uncommitted.
+
+    sh tools/sparc64/configure-turbofan.sh
+    make -C out --eval=.SECONDARY: -j96 BUILDTYPE=Release d8
+    python3 tools/sparc64/write-test-config.py --allow-turbofan
+    sh tools/sparc64/test-turbofan.sh
+    python3 tools/sparc64/test-turbofan-upstream.py
+
+This enables TurboFan while retaining the Sparkplug configuration's other
+feature restrictions. The five optimizer entrypoints now have implementations:
+eager/lazy deoptimization, lazy deoptimization after a fast API call, and
+interpreter/baseline optimizing OSR. Deoptimization saves the allocatable
+register state, copies input/output frames, calls the shared deoptimizer and
+resumes its continuation. It preserves the native register window and g6/g7,
+uses logical V8 stack addresses and converts CALL links to return PCs with +8.
+Stack iterability is updated with byte stores to the isolate field.
+
+The baseline assembler loads cached OSR CodeWrapper entries through weak
+references, rejects code marked for deoptimization and clears invalid slots.
+The optimizing frame constructor records its OSR entry and allocates only the
+additional frame slots. The backend now emits ArchCallJSFunction through the
+dispatch table. External references to isolate fields use root-relative
+addresses, following PPC and s390.
+
+The custom test checks the executing TurboFan frame bit inside each optimized
+function. It covers an eager type-change bailout, a lazy bailout with live
+objects and GC, and floating-point locals surviving lazy deoptimization and
+GC. A separate process disables Sparkplug and verifies interpreter-to-TurboFan
+OSR. Each process has a 15-second limit. A preserved Sparkplug binary is a
+negative control: it fails the TurboFan tier assertion.
+
+Five selected upstream cases require observed optimizing compilation as well
+as a successful exit: simple eager and lazy deoptimization, deoptimization
+followed by GC, deoptimization with try/catch and baseline-to-TurboFan OSR.
+The last case also asserts the executing tier after each transition.
+
+Validation on T7, 2026-10-26: the custom tier, eager/lazy/object/double/GC
+checks and direct interpreter OSR passed; 5/5 upstream optimizing cases,
+8/8 upstream baseline cases, the wide-backedge/compaction/baseline-OSR smoke,
+and 94/94 native encoder/MacroAssembler cases passed. The negative control
+rejected the preserved non-optimizing binary at its executing-tier assertion.
+
+These are bounded d8 checks. Full optimizing suites, broad arithmetic and
+deoptimization coverage, concurrent compilation and the fast API exception
+continuation still need validation. Node has not been built with this
+experimental configuration; the working Node/application results belong to
+the preserved Sparkplug checkout. Maglev, Wasm and native regexp compilation
+remain separate work. The backend follow-up below removes the short-branch
+limits recorded at this first milestone.
+
+Final logs use the sparc64-turbofan-* prefix under out/. Preserve the d8-only
+milestone separately:
+
+    python3 tools/sparc64/checkpoint.py --profile turbofan
+
+The manifest explicitly records the limited validation scope and includes
+the source overlay, d8, configuration, parent checkpoint and validation logs.
+Its path is written to out/sparc64-turbofan-checkpoint-path.txt.
+
+Ordinary JavaScript backend and branch validation
+------------------------------------------------
+
+The backend follow-up adds 32/64-bit rotation, register byte reversal and
+reversed loads/stores. Reversed non-atomic memory operations tolerate
+unaligned DataView addresses; atomic operations retain their aligned load or
+store and barriers. The native tests cover fixed bit patterns, aliased
+registers and shift-count wrapping.
+
+Label jumps now use CALL's 30-bit displacement while restoring o7 in the
+delay slot. Conditional integer and floating-point branches invert a short
+condition around that jump. Switch dispatch uses the same mechanism.
+The reach covers the signed-int code-buffer offsets used by the assembler.
+Native tests exercise both outcomes beyond the 19-bit conditional range,
+including NaN comparisons, and forward/backward jumps and deoptimization
+patches beyond the 22-bit unconditional range. Restoring the old conditional
+emitter in a control build fails the new test at its displacement check.
+
+Fast C calls reserve a three-instruction patch site at the native return PC.
+Their lazy deoptimization entry restores the native register window and
+argument area itself: normal cleanup code can already have been zapped when
+the fast callback deoptimizes its caller. The native frame keeps the original
+SP and stack-argument count in l4/l2. The exception path preserves V8 registers
+without pushing the biased native i6 as a potential tagged heap pointer.
+
+Constructor deoptimization now has a FAST_CONSTRUCT return landing with the
+recorded invoke offset and receiver/primitive-result handling. Float32 spill
+translation reads the first word of its slot, matching PPC/s390 and SPARC's
+big-endian FP stores. These changes fixed the constructor, fast-API and
+40-live-Float32 failures found by the first full optimizer run.
+
+Validation on T7, 2026-10-26:
+
+- Full applicable default-variant mjsunit: 6,539 cases, zero unexpected failures.
+  This uses normal automatic/concurrent optimization settings. Two mixed
+  JS/Wasm tests are excluded by the existing not-has-webassembly condition;
+  their assertions are unchanged. The earlier full run exposed 14 applicable
+  failures; all 14 passed after the fixes.
+- Expanded arithmetic/call/data-access selection: 32/32 passed.
+- Native encoder/MacroAssembler/backend tests: 100/100 passed, including all
+  earlier calling-convention checks and the long-branch controls.
+- Directed optimized arithmetic/data-access matrix: 71 edge-case vectors,
+  with BigInt integer references, overflow, signed zero, NaN, infinities,
+  subnormals, Float32 conversion, unaligned little/big-endian DataView
+  integer/BigInt reads and integer/BigInt/float stores.
+- A real optimized function generated 1,120,356 machine-code bytes and passed
+  an eager type-change bailout across the old conditional-branch limit. It
+  has 4,000 call sites with surplus arguments. Its deoptimization count stays
+  below V8's architecture-independent 16,384-entry limit.
+- Node now builds with TurboFan and passes the forced executing-tier,
+  eager/lazy deoptimization, live object/double and GC checks. A separate
+  arithmetic function reaches TurboFan through normal concurrent tiering;
+  its results are checked against BigInt arithmetic.
+
+Reproduce the focused checks after building node/d8:
+
+    out/Release/d8 --allow-natives-syntax --no-concurrent-recompilation \
+      tools/sparc64/test-backend.js
+    python3 tools/sparc64/test-backend-large.py
+    out/Release/node --allow-natives-syntax --expose-gc \
+      tools/sparc64/test-node-turbofan.cjs
+    python3 tools/sparc64/test-assembler.py --full
+
+The full mjsunit command is the upstream tools/run-tests.py runner from
+deps/v8 with --outdir=../../out/Release --variants=default --no-presubmit
+-j16 -t15 --exit-after-n-failures=0 --rerun-failures-count=0, selecting mjsunit.
+Save JSON results with --json-test-results and require a nonzero test count.
+
+Backend audit: 234/489 declared emitter cases are implemented. This count
+does not measure JavaScript completeness. Remaining declarations include
+disabled Wasm/SIMD and reference atomics, sandbox/pointer-compression paths,
+optional write-barrier verification, 32-bit paired operations and unused
+PPC-style opcode forms. SPARC's selector emits its own load/store opcodes for
+ordinary numeric atomics rather than the unused generic atomic declarations.
+Only kWord32ShiftIsSafe is advertised as an optional machine capability;
+unsupported rounding/popcount operations use shared lowering. Raw Float32
+overflow conversions and stack-return Peek forms belong to other lowering
+and ABI paths, rather than ordinary JS number conversion or JS register
+returns. The selector retains the same unimplemented Float64 insertion and
+Float16 raw-conversion hooks as the PPC reference. Enabling further features
+requires a separate audit and tests; these declarations are not silently
+treated as implemented.
+
+These results complete the ordinary-JS backend, branch-reach and broad
+arithmetic/data-access/call validation milestone for this configuration.
+Broader GC/deoptimization stress, additional V8 conformance suites, Node core
+and application coverage, feature restoration and sustained reliability work
+remain. The older Node application results still describe Sparkplug; this
+stage verifies optimized execution inside Node itself.
+
+Preserve this stage with python3 tools/sparc64/checkpoint.py --profile backend.
+It includes both node and d8, the full-suite results and focused evidence.
+
+TurboFan runtime stress and application validation
+-------------------------------------------------
+
+The runtime validation build keeps the same feature configuration and adds
+VERIFY_HEAP. Heap verification is a build capability; the earlier binary's
+read-only false flag could not validate heap pointers at collection time.
+
+    sh tools/sparc64/configure-turbofan-stress.sh
+    make -C out -j96 BUILDTYPE=Release d8 node
+    python3 tools/sparc64/write-test-config.py --allow-turbofan
+    python3 -u tools/sparc64/test-turbofan-runtime.py
+
+The runtime runner executes four independent groups, recording commands,
+timeouts, build metadata and before/after node/d8 SHA-256 hashes. Each group
+can be rerun with --group stress, core, applications or directed.
+
+The upstream stress selection covers deoptimization, escape analysis and
+materialization, constructor inlining, OSR/try-catch, fast native API calls
+and live Float32 spills. Four profiles request compaction, incremental
+marking, concurrent allocation and concurrent inlining, all with --verify-heap.
+The directed GC test checks optimized entries, old-to-young object/array
+stores, live objects/doubles, eager/lazy invalidation and exceptions across
+collections. Optimized addon reentry additionally keeps native handles and
+JS state live through major/minor GC and lazy deoptimization.
+The probes record executing-tier status unconditionally. The addon fixture
+reoptimizes before deliberate invalidation: GC may already have revoked the
+previous optimized caller when clearing weak field-type dependencies.
+
+Node's upstream buffer, stream, network, TLS, worker and child-process tests
+run through tools/test.py. The runner records four explicit exclusions:
+two Wasm message-port tests and two TLS fetch tests. Undici's HTTP/1 parser
+requires Wasm, so global fetch over HTTP/1 remains unavailable in this build;
+the node:http/node:https clients and the tested npm/application paths work
+without it. Existing test cases and assertions are unchanged. The common
+harness recognizes sparc64 as 64-bit, enabling the over-4-GB buffer check
+that its old architecture list incorrectly skipped.
+
+The initial Node run exposed SIGBUS in BigInt serialization, shared by
+worker primitive errors and advanced child-process IPC. GDB identified an
+unaligned STX into the serialized byte buffer. Both big-endian serialization
+and deserialization now use the existing base unaligned-access helpers for
+that buffer. The wire format stays little-endian. The directed regression
+checks byte order independently and varies internal padding and input-buffer
+alignment, including large signed BigInts, maps and structuredClone.
+
+Published application checks install the locked dependencies with npm ci,
+exercise Express HTTPS/JSON, WebSocket echo and the http-server CLI. A local
+npm fixture also checks lifecycle scripts, packing, offline installation,
+clean installation and execution of an installed command. The
+two-minute soak uses 16 concurrent HTTPS requests, text/binary WebSockets,
+two worker isolates and repeated minor/compacting major collections. It
+checks response values against BigInt references, requires actual automatic
+TurboFan execution in the Express handler and workers, and records eight
+post-GC memory samples. After warmup it rejects retained-heap growth of
+12 MiB or RSS growth of 96 MiB; those bounded checks do not establish
+long-term leak freedom.
+
+The runtime checkpoint profile requires passing evidence for all four groups,
+matching binary hashes, nonzero suite counts and the complete soak:
+
+    python3 tools/sparc64/checkpoint.py --profile runtime
+
+It preserves node, d8, the addon, build configuration, source overlay,
+validation evidence and the preceding backend checkpoint's manifest. Its
+path is written to out/sparc64-runtime-checkpoint-path.txt. Broader Node
+suites, long-duration reliability and restoration of disabled features are
+separate work.
+
+Final validation on T7, 2026-10-26, using the same node/d8 binary hashes:
+
+- Upstream heap-verified V8 stress: 49 compaction, 49 incremental-marking,
+  49 concurrent-allocation and 48 concurrent-inlining cases; 195 passed,
+  zero unexpected failures.
+- Node core selection: 988 passed, seven standard upstream skips and four
+  explicit disabled-Wasm exclusions. Both previously crashing serialization
+  cases and the over-4-GB buffer case pass with their original assertions.
+- Directed GC/deoptimization: three profiles, each with 90 verified optimized
+  entries and 300 explicit collections; all pass with --verify-heap.
+  Interpreter OSR, normal concurrent Node tiering and baseline regression
+  checks also pass.
+- Native addon: 24 verified optimized caller entries with 48 major/minor GC
+  pairs, including explicit lazy invalidation during native callback reentry.
+  The earlier nested-callback/exception/handle test also passes.
+- BigInt serialization: 2,729 independent endian, buffer-alignment, object/map
+  round-trip and structuredClone checks pass.
+- npm lifecycle/pack/local-install/clean-install/executable workflows and
+  Express HTTPS/JSON, secure WebSockets and published http-server checks pass.
+- Heap-verified soak: 121.47 seconds, 14,848 HTTPS requests, 928 WebSocket
+  exchanges and 15,923,000 checked worker calculations. The Express handler
+  recorded 1,697 actual TurboFan entries; both worker isolates also proved
+  automatic optimized execution. From the third post-GC sample to the last,
+  retained JS heap decreased 59,176 bytes and RSS increased 5,103,616 bytes.
+
+The runtime audit checks every group's success markers and zero exit status
+against its logs, and verifies matching current binary hashes. Final directed
+results supersede the initial custom-probe failures; no engine change was
+needed for those probe corrections. The architecture fix from this milestone
+is the unaligned serialized BigInt buffer access described above.
+
+Node embedded snapshots and code caching
+----------------------------------------
+
+This stage uses the separate sparc64-snapshots branch and
+node-sparc64-snapshots worktree on both hosts. The preceding runtime build
+and its checkpoint remain in node-sparc64-turbofan. The parent manifest is
+copied to out/sparc64-snapshot-parent.json after verification of all 120 port
+source files and the node/d8 binary hashes.
+
+The initial audit found that user-created snapshots and VM cached-data APIs
+already pass the selected upstream tests on the parent binary. The disabled
+features are Node's embedded bootstrapped startup snapshot and builtin-module
+cache. The new configure recipe enables both while retaining TurboFan,
+Sparkplug, heap-verification support and the existing disabled-feature set.
+
+    sh tools/sparc64/configure-snapshots.sh
+    make -C out -j96 BUILDTYPE=Release d8 node
+    python3 tools/sparc64/write-test-config.py --allow-turbofan
+    python3 -u tools/sparc64/test-snapshot-upstream.py
+    python3 -u tools/sparc64/test-snapshot-state.py
+
+The upstream selection covers startup snapshots, VM caches and module compile
+caches, including worker cache tests and the no-snapshot fallback. Standard
+upstream skips remain visible in the recorded TAP and JSON results. No test
+assertions are changed. The directed probe checks actual compiled-in-snapshot
+and compiled-with-cache bookkeeping, rather than only configure variables.
+
+The state fixture serializes cyclic objects, BigInts, maps and typed arrays;
+three fresh processes restore them and verify GC, TurboFan execution and
+deoptimization. The snapshot builder does not install global gc(), so this
+fixture uses the existing V8 CollectGarbage testing intrinsic. The code-cache
+fixture uses separate processes for production, consumption, corrupt-header,
+source, version and flag mismatch rejection, avoiding isolate-local compilation
+cache hits that could bypass input-cache validation.
+
+Code caches preserve compilation data such as bytecode, not a previously
+optimized JavaScript machine-code activation. The restored functions are
+explicitly compiled and executed with TurboFan after loading.
+
+Repeat the runtime/application checks on the new binary with
+test-turbofan-runtime.py --group core, --group directed and --group applications.
+After builds and concurrent test jobs finish, compare startup times:
+
+    python3 tools/sparc64/benchmark-startup.py
+
+It measures fresh-process startup with warm filesystem caches, interleaving
+15 samples per workload/mode after warmup. It compares the preserved parent,
+the new default and the new --no-node-snapshot fallback, for empty startup
+and a builtin-module workload. It records raw samples, medians, host load
+and binary hashes; it does not drop shared filesystem caches.
+
+The snapshots checkpoint profile requires matching binary hashes for the
+snapshot/cache checks, core/application/directed regressions and benchmark.
+It includes node, d8, node_mksnapshot, generated node_snapshot.cc, the directed
+snapshot/cache artifacts, toolchain information and the verified parent manifest:
+
+    python3 tools/sparc64/checkpoint.py --profile snapshots
+
+The resulting pointer is out/sparc64-snapshots-checkpoint-path.txt.
+
+Final validation on T7, 2026-10-26:
+
+- Embedded startup snapshot and builtin cache generation/linking succeeded.
+  The runtime probe records 82 modules restored from the snapshot and 73
+  compiled with cache, with zero compiled without cache. Its no-snapshot
+  control records zero snapshot/cache hits and 147 compilations without cache.
+- Upstream selection: 59 main-thread cases and three worker cases, zero
+  failures. Three main-thread Amaro-dependent cases skip normally. The
+  pre-existing global skip for test-snapshot-incompatible remains unchanged;
+  this milestone does not claim that skipped scenario. Snapshot reproducibility,
+  the TypeScript compiler snapshot fixture and builtin cache assertions pass.
+- All 12 directed state/cache checks pass, including three independent state
+  restorations with actual TurboFan execution, GC and eager deoptimization.
+  Corrupt, source, version and flag mismatch caches are rejected and execution
+  falls back correctly.
+- Node core regressions: 988 passed, seven standard upstream skips and the
+  same four explicit disabled-Wasm exclusions as the parent build.
+- Optimized GC/deoptimization, addon reentry, OSR, baseline, serialization,
+  npm lifecycle/install/pack/executable and published application checks pass.
+- The heap-verified application soak passes: 15,632 HTTPS requests and 977
+  WebSocket exchanges over 120.63 seconds, with actual automatic TurboFan
+  execution in the handler and both worker isolates. Post-warmup retained
+  heap growth is under 0.2 MiB and RSS decreases by 3.125 MiB.
+
+Median fresh-process startup on T7, warm filesystem caches, 15 interleaved
+samples per cell after warmup:
+
+| Workload | Preserved parent | New default | New --no-node-snapshot |
+| --- | --- | --- | --- |
+| Empty startup | 371.98 ms | 108.35 ms | 304.99 ms |
+| Builtin imports | 418.90 ms | 151.43 ms | 437.05 ms |
+
+The new default is about 3.4x faster for empty startup and 2.8x for the builtin
+workload in this measurement. These are warm-filesystem results on the loaded
+T7, not cold-disk startup or steady-state application benchmarks. Raw samples,
+load averages and binary hashes are retained with the results.
+
+No further SPARC backend change was required for this stage. The restoration
+uses the new configure recipe and upstream snapshot/cache implementations;
+the working parent sources and binary hashes remain unchanged.
+
+
+Native RegExp checkpoint (2026-10-28)
+------------------------------------
+
+The current development worktree is `node-sparc64-regexp`, branch
+`sparc64-regexp`, based on the verified 126-file snapshot/TurboFan checkpoint
+`node-snapshots-20261026T212627.382040Z`. The snapshot worktree and its live
+Node/d8 binaries remain unchanged. This stage enables native RegExp compilation
+by default alongside Sparkplug, TurboFan, embedded startup snapshots and builtin
+code cache. Wasm, Maglev, Temporal, Amaro and FFI remain disabled.
+
+The new `RegExpMacroAssemblerSPARC64` follows the RISC-V scalar backend and the
+PPC big-endian character-loading conventions. It uses SPARC register windows for
+native entry, keeps i6 as the native linkage and l5 as the V8 frame pointer,
+uses aligned native frames, and passes moving-code stack-guard callbacks through
+the existing immovable DirectCEntry builtin. Backtrack targets and saved internal
+return PCs are code-relative. Captures/register slots are stored as full 64-bit
+values; output captures and backtrack-stack entries use 32-bit values. Unaligned
+subject reads and SIMD scanning are disabled. The assembler now supports label
+code offsets through forward fixups, including after buffer growth.
+
+Validation on T7, GCC 16.2.1:
+
+- Full default mjsunit: 6,544 cases, zero unexpected results. Five previously
+  disabled SPARC interpreter-only exclusions were removed; assertions were not
+  changed.
+- RegExp selection: 109 default cases, 103 forced-JIT cases and 103 forced-JIT
+  compaction/heap-verification cases, all passing. The native profiles use V8's
+  stress_regexp_jit variant. `regexp-cons-empty-first` explicitly requires the
+  interpreter, so it runs in the default profile only. Upstream variant/feature
+  exclusions remain in effect; exact commands and selections are recorded.
+- Differential corpus: 70,568 exec cases plus replace, split and matchAll results
+  agree across interpreter, direct native compilation and normal tier-up. Code
+  presence together with bytecode absence proves native compilation; the
+  interpreter negative control reports zero native cases. The code-presence
+  intrinsic alone also counts interpreter trampolines and is insufficient.
+- A 40,001-character capturing match invokes GrowStack ten times and returns
+  correct captures, verified with a debugger breakpoint and a native-code check.
+- Native-addon interruption: ten Latin-1/UTF-16 matches per configuration survive
+  a full compacting GC and nested matching, then terminate as requested. Both
+  normal snapshot/tier-up and fresh-bootstrap/direct-native configurations pass
+  with heap verification. The surviving regexps remain usable afterward.
+- Native assembler suite: 101/101, including forward/backward label offsets over
+  more than 2 MiB and buffer growth.
+- Existing snapshot/cache state suite: all 12 cases pass, including actual builtin
+  cache usage, restored state, TurboFan/deoptimization and cache rejection controls.
+- Node core: 995 selected cases, 989 passes, six normal upstream skips, zero
+  failures, with four explicit disabled-Wasm exclusions. Directed optimized
+  GC/deopt, native-addon, serialization, OSR and baseline checks pass.
+- npm install/run/pack/offline local install/ci/exec, Express HTTPS, ws and
+  http-server pass. The 120.49-second application soak served 23,552 HTTPS
+  requests with actual optimized execution in the handler and both workers.
+
+Five interleaved fresh-process samples per mode, 100,000 matches per workload,
+produced these native/interpreter median speedups on the loaded T7:
+
+| Workload | Speedup |
+| --- | --- |
+| Route captures | 3.05x |
+| Email validation | 5.06x |
+| Log search | 3.56x |
+| Unicode letter matching | 1.26x |
+| Case-insensitive backreference | 7.61x |
+
+All checksums agree. These are bounded microbenchmarks; the application soak is
+validation, not a controlled application performance comparison.
+
+One debug configuration needs care: `--verify-heap --no-regexp-tier-up` with the
+embedded Node snapshot trips the shared V8 tick-counter verifier on RegExp data
+serialized with tier-up enabled. Normal snapshot/tier-up heap verification
+passes. The direct-native GC control uses `--no-node-snapshot`, which creates the
+initial RegExp data with matching flags; it also passes. No verifier assertion
+was weakened. This flag/snapshot compatibility issue remains separate from the
+native matching implementation.
+
+Reproduce on T7 from the source overlay and recorded base HEAD:
+
+```sh
+python3 tools/sparc64/build-regexp.py
+python3 tools/sparc64/write-test-config.py --allow-turbofan
+python3 tools/sparc64/test-assembler.py --full > out/sparc64-regexp-assembler.log 2>&1
+python3 tools/sparc64/test-regexp-differential.py
+python3 tools/sparc64/test-regexp-upstream.py --full
+python3 tools/sparc64/test-regexp-interrupt.py
+python3 tools/sparc64/test-regexp-stack.py
+python3 tools/sparc64/benchmark-regexp.py
+python3 tools/sparc64/test-snapshot-state.py
+python3 tools/sparc64/test-turbofan-runtime.py --group core
+python3 tools/sparc64/test-turbofan-runtime.py --group directed
+python3 tools/sparc64/test-turbofan-runtime.py --group applications
+python3 tools/sparc64/audit-regexp.py
+python3 tools/sparc64/checkpoint.py --profile regexp
+```
+
+The checkpoint profile gates the native, GC, differential, runtime, snapshot,
+benchmark and parent-preservation evidence against the current binary hashes.
+It retains source overlay/base HEAD, build configuration, Node/d8/mksnapshot,
+addon and state artifacts, toolchain/shared-library details, raw logs/results,
+compressed differential outputs and checksums. Its location is recorded in
+`out/sparc64-regexp-checkpoint-path.txt`. No commit or publication is performed.
+
+
+Optimized Node conformance and application hardening (2026-10-28)
+---------------------------------------------------------------
+
+The current worktree is `node-sparc64-hardening`, branch `sparc64-hardening`.
+It starts from the verified 142-file native RegExp checkpoint
+`node-regexp-20261028T131434.169010Z`; that worktree, its source overlay and its
+live Node/d8 binaries remain unchanged. Node is still v26.12.1, with Sparkplug,
+TurboFan, native RegExp, startup snapshot and builtin cache enabled. Wasm,
+Maglev, Temporal, Amaro and FFI remain disabled.
+
+Two runtime fixes were required:
+
+- RegExp data restored from a startup snapshot now initializes its tier-up
+  counter from the consumer flags, using the same rule as the factory. A
+  snapshot produced with tier-up enabled can therefore be used with
+  `--verify-heap --no-regexp-tier-up`, zero ticks, a different tick budget or
+  interpreter-only execution. The earlier debug-flag caveat is resolved.
+  Experimental RegExp data and user-code cache state are preserved.
+- The inspector's big-endian UTF-16LE conversion now uses the existing
+  unaligned-safe little-endian read helper. CBOR strings may start at odd
+  addresses; the former typed load raised SIGBUS. This caused REPL history
+  preview and inspector Unicode evaluation to crash. No verifier or test
+  assertion was weakened.
+
+The first broad baseline selected 5,832 cases and recorded 50 failures. After
+fixes and evidence-based environment/feature classification, the final runs
+produced zero unexpected results:
+
+| Selection | Cases | Passes | Upstream skips |
+| --- | --- | --- | --- |
+| parallel, sequential, async-hooks, ESM, module-hooks, message, report, trace_events, test-runner, node-api | 5,790 | 5,354 | 436 |
+| addons and js-native-api | 137 | 133 | 4 |
+| abort, pseudo-tty, SEA and SQLite | 93 | 55 | 38 |
+| Native C++ | 280 | 280 | 0 |
+
+That is 5,542 Node test passes and 280 C++ test passes. Shared-library SEA
+restrictions and other existing feature/platform skips remain visible in the
+raw TAP output. A single additional C++ test executes WebAssembly and is
+explicitly excluded. Forty-five named JavaScript exclusions and their reasons
+are in `hardening-exclusions.json`; these are not extra passing cases.
+
+Most exclusions require disabled Wasm, including HTTP/1 fetch and builtin
+WebSocket operations through Undici; one requires Amaro TypeScript stripping.
+Three independent controls explain the remaining platform/tool cases:
+
+- `O_NOATIME` is 0x200000 on SPARC Linux. The Node value equals a compiled C
+  program using the native headers; the upstream test assumes x86's 0x40000.
+- A permission-denied deletion test assumes non-root execution. Its unchanged
+  source passes when staged and run as `nobody`; the root baseline bypasses
+  the intended filesystem restriction.
+- System Info-ZIP displays Unicode names as question marks even for a Python
+  reference archive, in all tested UTF-8 locales. Python and bsdtar read and
+  extract Node's archive correctly, with matching names, CRCs and contents.
+  Both the failing external-tool output and independent controls are retained.
+
+The broad tests run on a recorded affinity set with one hardware thread from
+16 different cores. This bounds `os.availableParallelism()`-scaled tests on
+the 256-thread T7. The HTTP GC tests passed without changes under this bound;
+the unbounded baseline created 1,024 concurrent requests and hit connection
+resets. Previously timed-out coverage, flag-propagation, SQLite, ShadowRealm
+and watch-mode tests also pass with appropriate timeouts. The final broad run
+used eight workers and 120 seconds per case, taking about 651 seconds.
+
+Directed validation:
+
+- Ten snapshot/tiering configurations pass in both the main thread and workers,
+  with heap verification and compacting GC. This includes forced native RegExp
+  with the embedded snapshot, without the previous fallback flag.
+- Inspector native conversion passes at 16 byte offsets for both overloads.
+  The unchanged parent raises SIGBUS as the negative control. All 256 actual
+  inspector Unicode round trips and property queries pass with heap checks.
+- TypeScript 6.0.3 compiles a generated 64-module/65-file strict project, emits
+  declarations and source maps, executes the emitted program (checksum
+  2,207,808), reuses an incremental cache, rejects an intentional type error,
+  recovers and runs the rebuilt output. ESLint 10.13.0 lints all 65 emitted
+  files cleanly and catches an intentional undefined identifier. Compiler and
+  linter logs prove automatic TurboFan compilation. Dependencies are pinned
+  by `workloads/package-lock.json`.
+- TypeScript 7's package entrypoint invokes a platform-specific native
+  executable. The workload uses the 6.x JavaScript compiler to exercise Node's
+  JavaScript execution and JIT. Native TypeScript packaging is a separate
+  toolchain task.
+- All 12 snapshot/cache state cases, 70,568 RegExp differential cases in three
+  modes, 109/103/103 upstream RegExp cases, interrupt/GC/nested matching,
+  optimized GC/deoptimization, serialization, addon, OSR and baseline
+  regressions pass on the new binaries.
+- npm workflows and Express HTTPS/ws/http-server checks pass. The 120.90-second
+  application soak served 24,832 HTTPS requests with actual TurboFan execution
+  in the handler and both workers. This is bounded validation, not a controlled
+  performance comparison or long-term reliability claim.
+
+Reproduction from the saved source overlay and base HEAD:
+
+```sh
+python3 tools/sparc64/build-hardening.py
+python3 tools/sparc64/write-test-config.py --allow-turbofan
+python3 tools/build_addons.py test/node-api --out-dir out/Release --loglevel=error
+python3 tools/build_addons.py test/addons --out-dir out/Release --loglevel=error
+python3 tools/build_addons.py test/js-native-api --out-dir out/Release --loglevel=error
+python3 tools/build_addons.py test/sqlite --out-dir out/Release --loglevel=error
+python3 tools/sparc64/test-conformance.py --group broad
+python3 tools/sparc64/test-conformance.py --group addons
+python3 tools/sparc64/test-conformance.py --group native
+python3 tools/sparc64/test-cctest.py
+python3 tools/sparc64/test-snapshot-regexp-flags.py
+python3 tools/sparc64/test-inspector-strings.py
+python3 tools/sparc64/test-platform-assumptions.py
+python3 tools/sparc64/test-zip-interop.py
+python3 tools/sparc64/test-workloads.py
+python3 tools/sparc64/test-snapshot-state.py
+python3 tools/sparc64/test-regexp-differential.py
+python3 tools/sparc64/test-regexp-upstream.py
+python3 tools/sparc64/test-regexp-interrupt.py
+python3 tools/sparc64/test-turbofan-runtime.py --group directed
+python3 tools/sparc64/test-turbofan-runtime.py --group applications
+python3 tools/sparc64/audit-hardening.py
+python3 tools/sparc64/checkpoint.py --profile hardening
+```
+
+The platform permission control requires root to launch a child as `nobody`;
+ZIP controls require Python, bsdtar and Info-ZIP. The audit verifies current
+binary/source hashes, exact TAP execution counts, C++ results, native-code
+proof, positive/negative controls, workloads, regressions and the unchanged
+parent. The checkpoint retains binaries, source overlay/base HEAD,
+configuration, toolchain/shared-library details, raw baseline and final
+results, control artifacts, generated application output and checksums.
+Its location is recorded in `out/sparc64-hardening-checkpoint-path.txt`.
+No commit, push or publication is performed.
+
+Baseline Wasm milestone
+-----------------------
+
+Development checkouts: node-sparc64-wasm locally and /root/node-sparc64-wasm
+on T7. The node-sparc64-hardening checkout and its checkpoint are preserved.
+The configuration enables WebAssembly while retaining JavaScript Sparkplug,
+TurboFan, native RegExp, embedded snapshots/cache and heap verification.
+SPARC64 defaults to Liftoff-only Wasm; optimizing Wasm tiers and JS/Wasm
+inlining are disabled independently of the JavaScript optimizing compiler.
+SIMD is reported unavailable, allowing Undici to select its scalar parser.
+Deferred Wasm work:
+
+- JSPI (JavaScript Promise Integration): implement suspend/resume/reject,
+  promise-return and stack-switching builtins, including GC roots, exception
+  propagation and stack unwinding across suspension. Validate with the
+  unchanged Node parallel/test-wasm test and V8's JSPI/WPT cases, then remove
+  its explicit feature exclusion. Deferred to a later milestone.
+- Optimizing Wasm compiler and JS/Wasm inlining.
+- Wasm SIMD and GC proposal execution. Scalar atomics are covered by the
+  later milestone below.
+
+The current native build passes 1,010 custom baseline checks across integer,
+floating-point, control, calls, tables, large frames, recursive stack overflow,
+JS reentry with GC, unaligned little-endian memory access and bounds traps.
+Exported-function checks use IsLiftoffFunction to prove native execution.
+The actual bundled scalar llhttp parser passes 194 checks. Native fetch
+redirect/gzip/POST/abort and builtin WebSocket text/binary echo checks pass,
+as do seven unchanged Node integration tests. These results are tied to the
+current binary hashes in the validation evidence.
+
+The current native build passes all 73 selected scalar specification cases
+and 77 core JS API cases with zero unexpected outcomes. Fixes cover C helper argument extension,
+floating comparisons, arithmetic NaN canonicalization, saturating conversions,
+stack returns and import-wrapper frame allocation. The wrapper frame now
+reserves the implicit argument slot required by its call descriptor, matching
+PPC/s390 and protecting spills across nested JavaScript calls.
+FixedSizeSignature also needs nontrivial copies: SPARC V9 may return trivial
+aggregates up to 32 bytes in registers, relocating the object while leaving
+its internal pointer aimed at a temporary. Actual-header controls reproduce
+the old defect at -O0 and -O3 and pass with the corrected storage ownership.
+SegmentedTable::FreelistHead also requires 8-byte alignment for GCC's atomic
+compare/exchange expected-value load; the natural 4-byte alignment SIGBUS
+negative control and explicitly aligned control document this separately.
+
+Run on T7, with no other build active in this checkout:
+
+```sh
+python3 tools/sparc64/build-wasm.py
+python3 tools/sparc64/write-test-config.py --allow-turbofan --allow-webassembly
+python3 tools/sparc64/prepare-wasm-suites.py
+python3 tools/sparc64/test-wasm-platform.py
+python3 tools/sparc64/test-wasm-baseline.py
+python3 tools/sparc64/test-wasm-upstream.py
+python3 tools/sparc64/test-wasm-jsapi.py
+python3 tools/sparc64/test-wasm-integration.py
+python3 tools/sparc64/test-wasm-js-regression.py
+python3 tools/sparc64/test-wasm-node-modules.py
+```
+
+The upstream runners verify the test archives pinned by this V8 checkout and
+check fixture bytes against those archives. They do not change assertions.
+The JS API selection uses V8's existing WPT harness, covering constructors,
+instances, modules, globals, memories and tables (including memory64 cases).
+Additional proposal/API cases and resource-limit stress are recorded outside
+that selection, not treated as passing tests. Raw logs and binary hashes live
+in out/sparc64-wasm-*. The conformance and cctest runners accept --profile wasm;
+that profile re-enables the previous disabled-Wasm coverage, including
+Node's compileStreaming embedder callback test. The dedicated
+parallel/test-wasm case exercises JSPI (WebAssembly.Suspending/promising),
+which remains deferred. Its explicit feature exclusion is recorded in
+wasm-feature-exclusions.json; the initial broad run retains evidence of its
+unsupported-path crash. Node's skip matcher uses substring matching, so
+the exclusion uses the full parallel/test-wasm.mjs filename. Three ordinary
+Wasm module cases are also validated independently by test-wasm-node-modules.py.
+The audit checks combined broad and supplemental coverage against the initial
+full selection, preserving repeated configurations and excluding only JSPI. No baseline assertions are removed
+or modified.
+
+The preserved 6,544-case ordinary-JavaScript selection passes with Wasm
+enabled. All 281 Node C++ tests pass, including the Wasm streaming callback.
+Directed optimizing GC/deoptimization, OSR, addon reentry, all 12 snapshot/cache
+cases, 109/103/103 upstream RegExp cases, and TypeScript/ESLint workloads pass.
+The optimized application soak passes: 24,704 HTTPS requests and 1,544
+WebSocket messages in 120.6 seconds, with optimized handler and worker code.
+Node conformance covers 6,061 cases (including repeated configurations) across
+broad, addon/native and
+supplemental Wasm module runs: 5,583 pass and 478 use upstream skips, with zero
+unexpected failures. The initial broad run is retained separately and records
+only the deferred JSPI failure. Five explicit exclusions remain: JSPI, the
+Amaro probe, the permission test run separately as nobody, the x86-specific
+O_NOATIME expectation checked by a native control, and system Info-ZIP Unicode
+output checked against Python/bsdtar controls. Existing tests are unchanged.
+
+Reproduce the regression and checkpoint gates with:
+
+```sh
+python3 tools/build_addons.py test/node-api --out-dir out/Release --loglevel=error
+python3 tools/build_addons.py test/addons --out-dir out/Release --loglevel=error
+python3 tools/build_addons.py test/js-native-api --out-dir out/Release --loglevel=error
+python3 tools/build_addons.py test/sqlite --out-dir out/Release --loglevel=error
+python3 tools/sparc64/test-conformance.py --profile wasm --group broad
+python3 tools/sparc64/test-conformance.py --profile wasm --group addons
+python3 tools/sparc64/test-conformance.py --profile wasm --group native
+python3 tools/sparc64/test-cctest.py --profile wasm
+python3 tools/sparc64/test-snapshot-regexp-flags.py
+python3 tools/sparc64/test-platform-assumptions.py
+python3 tools/sparc64/test-zip-interop.py
+python3 tools/sparc64/test-turbofan-runtime.py --group directed
+python3 tools/sparc64/test-turbofan-runtime.py --group applications
+python3 tools/sparc64/test-snapshot-state.py
+python3 tools/sparc64/test-regexp-upstream.py
+python3 tools/sparc64/test-workloads.py
+python3 tools/sparc64/audit-wasm.py
+python3 tools/sparc64/checkpoint.py --profile wasm
+```
+
+The Wasm checkpoint path is recorded in out/sparc64-wasm-checkpoint-path.txt.
+The audit requires all evidence to match the current binaries and source
+hashes. It checks the unchanged hardening parent's source set, binaries and
+checkpoint checksums. The checkpoint profile retains the source overlay/base
+HEAD, binaries, configuration, toolchain, pinned upstream test archives and
+raw validation logs. Verify a saved checkpoint independently with:
+
+```sh
+python3 tools/sparc64/verify-checkpoint.py /path/to/checkpoint --source-root .
+```
+
+The optional source-root check verifies the current base HEAD, exact overlay
+file set, hashes and tracked patch. Nothing is committed or published
+automatically.
+
+Scalar Wasm atomics milestone
+----------------------------
+
+Development checkouts: node-sparc64-wasm-atomics locally and
+/root/node-sparc64-wasm-atomics on T7, branch sparc64-wasm-atomics. The verified
+node-sparc64-wasm source tree and checkpoint are the preserved baseline.
+
+The implementation adds naturally aligned atomic loads/stores and CASX loops
+for scalar 8/16/32/64-bit RMW operations. RMW operations convert the selected
+lane to Wasm little-endian values before arithmetic, then convert the desired
+value back before CASX. A failed CAS retries from the current containing word,
+preserving neighboring lanes. Full membar fences provide sequential consistency.
+JavaScript atomics retain native-endian behavior through the existing helper's
+default path. Wait/notify use V8's existing endian-aware futex runtime.
+The Liftoff loop stack check now uses the interrupt-aware jslimit, following
+PPC/s390, so a running worker services shared-memory growth requests. Both
+unchanged upstream growth tests exposed the previous real_jslimit timeout;
+the failed results and pre-fix source are retained as a negative control.
+
+Validation passed on the current T7 build:
+
+- test-wasm-atomics.js: 504 native Liftoff exports and 198,392 checks across
+  memory32/64, shared/private memories, constant/dynamic addressing, all scalar
+  widths and operations, LE byte layout, truncation, neighboring lanes and traps.
+- prepare-wasm-atomics.py: pinned WebAssembly/threads atomic.wast, unchanged;
+  WABT wast2json translates all 372 commands. run-wasm-atomic-spec.js executes
+  every command, including 154 assert_return, 55 assert_trap and 93 invalid
+  modules. The harness maps reference-interpreter diagnostics to V8 messages.
+- Unchanged V8 atomic/CAS and shared-memory worker tests, invoked directly so
+  that the upstream blanket big-endian Wasm skip cannot hide execution.
+- build-wasm-threaded-workload.py: compile the bundled unchanged xxHash header
+  with an atomic work queue; generate independent native C reference hashes.
+  CLANG, WASM_LD and CC select the compilers. This is freestanding scalar Wasm;
+  no Emscripten runtime, SIMD or optimizing Wasm compiler is required.
+- test-wasm-threads.cjs: four Node workers hash 1,024 blocks (16 MiB) from a
+  shared queue, compare every result to the native oracle, stress neighboring
+  byte/halfword lanes and 32/64-bit counters, test 64-bit tearing, run 10,000
+  store-buffering rounds, verify in-flight shared-memory growth, and check
+  Wasm32/Wasm64 wait plus JavaScript/Wasm notification interoperability.
+
+Reproduction after building and preparing the inputs:
+
+    python3 tools/sparc64/test-wasm-atomics.py --group matrix
+    python3 tools/sparc64/test-wasm-atomics.py --group spec
+    python3 tools/sparc64/test-wasm-atomics.py --group upstream
+    python3 tools/sparc64/test-wasm-atomics.py --group threads
+
+The current native build passes all 198,392 matrix checks (504 Liftoff exports),
+all 372 official atomic specification commands (73 native exports), and all 14
+unchanged V8 atomic/shared-memory cases. Four Node workers hash 1,024 blocks
+(16 MiB), with every result matching both the cross-host and native SPARC GCC
+oracles. All workers perform work; 55 exports across the five instances are
+verified as native Liftoff functions. Lane contention and 64-bit tearing run
+10,003 iterations, store buffering runs 10,000 rounds, and all nine wait/notify
+checks pass. A running worker observes shared-memory growth from 320 to 321
+pages through the fixed interrupt-aware stack check.
+
+Inherited regressions pass: 1,010 baseline Wasm checks, 73 scalar spec cases,
+77 core JS API cases, the preserved 6,544-case ordinary JavaScript selection,
+6,061 effective Node conformance cases including normal upstream skips, all
+281 Node C++ tests, native RegExp, GC/deoptimization/OSR, snapshots/cache,
+TypeScript/ESLint controls, npm and the two-minute HTTPS/WebSocket application
+soak. Explicit JSPI and existing tool/platform exclusions remain unchanged;
+permission, O_NOATIME and Unicode ZIP assumptions retain independent controls.
+
+validate-wasm-atomics.py reproduces the acceptance phases. The checkpoint
+profile wasm-atomics requires both audit-wasm.py and audit-wasm-atomics.py,
+including current source/binary hashes, raw results, exact case selection,
+the growth-test negative control, independent oracles and the unchanged
+baseline source tree, binaries and checkpoint. Its path is recorded in
+out/sparc64-wasm-atomics-checkpoint-path.txt. No commit or push is performed.
+
+JSPI remains explicitly deferred, together with optimizing Wasm, SIMD and GC
+proposal execution. The existing Node/JavaScript JIT regression gates still apply.
+
+Scalar Wasm features (2026-10-29)
+---------------------------------
+
+The separate sparc64-wasm-scalar tree starts from the verified atomics
+checkpoint node-wasm-atomics-20261029T141122.399167Z. Its parent remains
+unchanged. Liftoff PrepareTailCall copies arguments and restores the caller
+frame using the SPARC biased stack convention. TailCallIndirect resolves the
+code table entry before jumping. The generic call_ref path now loads the
+32-bit WasmCodePointer with LoadCodePointer; a full-width load also reads the
+neighboring field on a big-endian target. Eight unexpected outcomes from the
+atomics-parent binary are resolved by these changes.
+
+The rebuilt T7 binary passes 15 unchanged upstream tail-call, function-reference
+and exception suites, and 175 unchanged scalar spec scripts with zero
+unexpected outcomes. The upstream expected failures table, memory64/memory64
+and memory64/table64 remain unchanged. The frame matrix passes 4,502 checks
+across 181 cases and 361 native functions, including mixed scalar/reference
+arguments, large frames, multiple return values and 100,000 recursive tail
+calls with a 128 KiB stack.
+
+The real application uses the unchanged nlohmann/json v3.11.3 single header
+from commit 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03, compiled to scalar Wasm
+with native C++ exceptions. It normalizes JSON, aggregates a ledger and reports
+schema/parse errors. Its 56 cases and 168 invocations are compared with
+cross-host and native SPARC GCC oracles. The run catches 15 native C++
+exceptions, executes 20,000 tail calls through typed-reference adapters and
+grows linear memory. prepare-wasm-scalar-application.py fetches hash-pinned
+dependencies; build-wasm-scalar-application.py rebuilds using EMXX, WASM2WAT
+and CXX. test-wasm-scalar-acceptance.py repeats native acceptance and builds
+the target oracle. The fixture records 504 checks and 15 native functions.
+
+Regression testing exposed a snapshot bug: deserialization passed views(),
+which converts a detach-key Cell to kManyViews, into ArrayBuffer Setup. The
+one-line fix passes views_or_detach_key() to preserve the Cell. The unfixed
+binary builds all four tracking/heap-verification configurations successfully,
+but all eight restores fail: key protection is lost, and heap verification
+rejects kManyViews when tracking is disabled. After the fix all 12 build/restore
+steps pass, as do all 12 original snapshot/cache state cases. The original
+binary, failed blob, build metadata and logs are preserved in
+out/sparc64-snapshot-before-fix.
+
+test-snapshot-array-buffer-keys.py checks 27 buffers with string, symbol and
+object keys, empty/small/large backing stores and different views. Each of four
+tracking/heap-verification configurations builds a snapshot and restores it
+twice. Restored buffers reject wrong or absent keys, accept the original key,
+preserve bytes and invalidate views on detach. A pooled Buffer also keeps its
+detach protection. Baseline and fixed runs use identical fixture hashes.
+
+The full inherited regression pipeline passes with the rebuilt binary:
+1,010 baseline Wasm checks, 73 preserved spec cases, 77 core JS API cases,
+198,392 atomic matrix checks, 372 official atomic spec commands, 14 unchanged
+atomic feature suites and the four-worker hash/growth workload; the preserved
+6,544-case JavaScript selection, three native RegExp profiles, all 281 Node C++
+tests, optimized GC/deoptimization/OSR, addons, snapshots/cache and ten RegExp
+snapshot flag configurations; TypeScript/ESLint controls, npm and the two-minute
+HTTPS/WebSocket application soak. Node conformance completes 6,061 cases with
+zero failures and 478 normal upstream skips: broad 5,831, addons 137, native 93.
+Existing explicit JSPI and tool/platform exclusions remain unchanged.
+
+Reproduction on T7 after preparing the application/toolchain inputs:
+
+python3 tools/sparc64/build-wasm.py --incremental
+python3 tools/sparc64/test-wasm-scalar-acceptance.py
+python3 tools/sparc64/validate-wasm-atomics.py
+python3 tools/sparc64/audit-wasm-scalar.py
+python3 tools/sparc64/checkpoint.py --profile wasm-scalar
+
+The regression driver includes the detach-key test. The audit requires both
+its unchanged-binary negative control and fixed results, checks that the
+snapshot rebuild changed only the deserializer source, and requires the
+inherited Wasm/atomics/Node/JIT audits and unchanged parent checkpoints.
+The scalar checkpoint retains source overlays, binaries, application inputs
+and oracles, baseline failures and raw results. Verify it independently with
+verify-checkpoint.py and verify its local mirror before closing the goal.
+No commits or pushes are performed.
+
+SIMD, comprehensive GC proposal execution, JSPI, optimizing Wasm and additional
+debugger/tiering support remain deferred. JavaScript Sparkplug/TurboFan, native
+RegExp, snapshots/cache and Wasm Liftoff remain enabled.
+
+
+JSPI stack switching (2026-10-29)
+---------------------------------
+
+The separate sparc64-jspi worktree starts from the verified scalar checkpoint
+node-wasm-scalar-20261029T160442.922195Z (212 sources, 699 recorded artifacts).
+The scalar parent remains unchanged. The current native Node, d8 and inspector
+shell pass the JSPI acceptance described below. The full inherited regression
+gates also pass: scalar Wasm, atomics, JavaScript JIT, Node conformance, GC/deopt,
+RegExp, snapshots/cache, native addons, applications/npm and the two-minute
+optimized application soak. Checkpoint closure requires the audits and separate
+native/local verification described below.
+
+Only two production files change relative to that parent. builtins-sparc64.cc
+implements promise wrappers, suspension, resumption, rejection and CEntry
+central-stack switching. setup-builtins-internal.cc adds SPARC64 to the guard
+that emits the JSPI prompt exception-handler table. Generic JumpBuffer layout
+and upstream test sources, assertions and expected output remain unchanged.
+
+Native FP (%i6) is distinct from V8 FP (%l5); an extra unscanned JSPI frame slot
+preserves it. Stack switches flush register windows and restore native and V8
+frame pointers before changing SP. Fresh stacks need a mapped native window
+anchor. These follow the register-window lessons in the Go SPARC runtime.
+Logical SP translates through the existing stack-bias helpers (2047 native bias
+plus 176-byte minimum native frame). CEntry checks exceptions on the central
+stack; an unwinder retiring a secondary stack needs a safe central native anchor
+and must restore native FP from the newly activated parent's saved JSPI frame.
+ResolveWasmCodePointer also preserves its code-table index in g5 because loading
+the external table base can clobber g1.
+
+Native acceptance on T7:
+- test-jspi-upstream.py: all five unchanged core JSPI suites and 13 related
+  supported-mode regressions pass, with original per-file flags retained.
+- test-jspi-node.py: unchanged parallel/test-wasm.mjs passes. Its former feature
+  exclusion is removed from wasm-feature-exclusions.json in this child only.
+- test-jspi-runtime.py: basic, full-compaction and incremental-marking profiles
+  pass with heap verification. Each checks 128 repeated suspensions, eight
+  concurrent stacks, eight nested promising calls, 16 rejections with recovery,
+  64 stack reuses, Wasm catching rejected JS values, synchronous completion,
+  parameter conversion and live externref/multi-value roots across GC. Each
+  records 151 checks, 362 suspensions and 13 native Liftoff functions. The JS
+  harness also passed an x86 Node 24 control with --experimental-wasm-jspi.
+- test-jspi-termination.py: 20 repeated pairs of unchanged worker-termination
+  cases pass (40 executions), including the full pool of 50 suspended stacks.
+- build-jspi-inspector.py builds the unchanged upstream inspector shell against
+  the existing V8 libraries without changing Node/d8. test-jspi-inspector.py
+  passes debugger/wasm-jspi-async-stack with the original expected text, through
+  the official runner. --run-skipped overrides its upstream architecture skip
+  for this one test; the upstream status file remains unchanged.
+
+The immutable scalar-parent binary traps in Node's test and 17 selected V8
+cases; regress-408254017 already passes there. Negative controls and the three
+implementation debugging attempts are retained under out/jspi-attempts.
+prepare-jspi-inputs.py seeds pinned inputs and inherited negative controls from
+the scalar checkpoint without overwriting current build logs or binaries.
+
+Reproduction (native T7, cores disabled by the Python drivers):
+  python3 tools/sparc64/test-jspi-upstream.py
+  python3 tools/sparc64/test-jspi-node.py
+  python3 tools/sparc64/test-jspi-runtime.py
+  python3 tools/sparc64/test-jspi-termination.py
+  python3 tools/sparc64/build-jspi-inspector.py
+  python3 tools/sparc64/test-jspi-inspector.py
+  python3 tools/sparc64/validate-wasm-atomics.py
+  python3 tools/sparc64/test-wasm-scalar-acceptance.py
+  python3 tools/sparc64/checkpoint.py --profile jspi
+
+Preserve an existing inspector result before rerunning that driver. audit-jspi.py
+requires current binary hashes, unchanged upstream fixture bytes, all original
+scalar/atomics/Node/JIT/application gates, and a verified unchanged scalar parent.
+The preserved Node conformance selection is 6,062 cases (5,832 broad, 137 addon,
+93 native), with 478 normal upstream skips and no unexpected failures.
+Inherited audits accept --allow-jspi only to account for the two production
+changes and the newly enabled Node case. A JSPI checkpoint includes all inherited
+evidence plus inspector binary/build logs, runtime profiles, termination rounds
+and negative controls. verify-checkpoint.py checks every recorded artifact and
+source-overlay member; a separate local mirror verifies the same native results.
+
+Tests requiring optimizing Wasm (--no-liftoff), experimental growable stacks,
+WasmFX, the unavailable Wasm interpreter or sandbox build remain separate
+feature configurations. Ordinary non-promising exports still use the parent
+architecture's compiled wrappers; the global generic-wrapper/stress-switch
+architecture guard is unchanged. SIMD, optimizing Wasm, comprehensive Wasm GC proposal
+execution and additional debugger/tiering support remain deferred. The passing
+JSPI inspector test does not establish general Wasm debugger support. JavaScript
+Sparkplug/TurboFan, native RegExp, snapshots/cache and scalar Liftoff remain
+enabled. No commit or push has been performed.
+
+
+Production Wasm (2026-10-30)
+----------------------------
+
+The sparc64-wasm-production worktree extends verified JSPI checkpoint
+node-jspi-20261029T174932.476777Z. Its source tree, binaries and checkpoint
+remain immutable. SIMD, Wasm GC, optimizing compilation, JS/Wasm wrappers and
+supported body inlining, and general Wasm debugging/tiering are implemented.
+The full inherited regression audit passes. The checkpoint command seals the
+source overlay, native binaries and evidence; verify-checkpoint.py must pass on
+both the native checkpoint and its local mirror before closing the goal.
+Experimental WasmFX and growable stacks remain outside this milestone.
+
+The 217 standard/relaxed SIMD emitters are shared by Liftoff and the optimizing
+backend. A vector's high half occupies physical dN, its low half d(N+16), with
+N=0..14 and d15/d31 reserved. Scalar dN therefore aliases the native high half.
+Spills and ABI arguments use native big-endian 128-bit order; linear memory
+uses Wasm little-endian order. Lazy compilation, debug breaks and deoptimization
+preserve both halves. C ABI narrow integer arguments receive their required
+sign or zero extension. Invalid floating-point arithmetic produces canonical
+Wasm NaNs. Optional FP16 emitter hooks retain upstream fallback paths.
+
+Normal upstream defaults are restored: Liftoff-only is false, Wasm inlining and
+JS/Wasm call inlining are true. Feedback allocation and tiering budgets work;
+optimized Wasm can deoptimize into Liftoff, including SIMD and float values.
+Generic Wasm-to-JavaScript wrappers are enabled. Inspector breakpoint calls
+have a fixed size across instruction alignment; debugger scope readers account
+for native big-endian scalar slots and convert native vector lane order.
+
+Native T7 feature evidence (label production-atomic-endian):
+- All 258 pinned production specification scripts pass in Liftoff, optimizing
+  and default modes, retaining three upstream expected failures. The 21 scripts
+  for experimental WasmFX/custom descriptors are recorded separately.
+- All 18 SIMD core cases and 22 GC core cases pass in both forced tiers;
+  10 ABI cases also pass with normal defaults and lazy compilation.
+- All 30 upstream deoptimization cases, 17 inlining/wrapper cases and four
+  tiering cases pass with normal compiler defaults. Compiler traces prove
+  Wasm-to-Wasm inlining and four supported Wasm bodies inlined into JavaScript.
+- All 46 unchanged inspector Wasm debugger tests pass. An additional fixture
+  inspects 20 distinct vectors across registers and spills before and after
+  GC while paused, then verifies an order-sensitive resumed checksum.
+- The BigInt-oracle SIMD matrix performs 11,328 calls and 1,812,480 byte/guard
+  checks in each native tier. Undici's unchanged SIMD llhttp module performs
+  1,320 parser checks per tier, with explicit native compiler proof.
+- Three mixed SIMD/GC/JSPI profiles (normal, compaction, incremental marking)
+  each check 34 calls and 102 promise suspensions across four concurrent stacks,
+  retaining 20 vectors and Wasm GC objects before and after native tier-up.
+- Sixteen of 17 additional GC/interoperability cases pass unchanged. The
+  remaining instance-gc fixture writes through a host-endian Int32Array and
+  expects Wasm's little-endian load to return the same value. Its unchanged
+  failure is preserved. A separate copy changes only that write to explicit
+  little-endian DataView.setInt32 and passes in all three compiler modes.
+  This fixture limitation is reported explicitly by the audit; upstream files
+  and test status files are unchanged. Upstream's status file otherwise skips
+  all wasm/* mjsunit cases on big endian, which these targeted drivers bypass.
+
+Reproduction and evidence:
+  python3 tools/sparc64/prepare-wasm-production-regression-inputs.py
+  python3 tools/sparc64/build-wasm.py --incremental
+  python3 tools/sparc64/build-wasm-production-inspector.py --label LABEL
+  python3 tools/sparc64/validate-wasm-production.py --stage prep --label LABEL
+  python3 tools/sparc64/validate-wasm-production.py --stage features --label LABEL
+  python3 tools/sparc64/validate-wasm-production.py --stage regressions --label LABEL
+  python3 tools/sparc64/validate-wasm-production.py --stage optimizer-regressions --label LABEL
+  python3 tools/sparc64/audit-wasm-production.py --label LABEL
+  python3 tools/sparc64/checkpoint.py --profile wasm-production
+
+Use a fresh label and preserve earlier attempts before rerunning legacy tests.
+The feature stage retains the unchanged instance-gc failure and runs its control.
+The final audit requires that exact failure, its byte-order probe and all three
+corrected-copy controls, as well as every passing production and inherited gate.
+The default checkpoint label is production-atomic-endian. Previous build attempts,
+raw test output, negative controls and exact compiled source hashes are retained.
+No commit, push or upstream publication has been performed.
+
+Optimizing atomic RMW operations use little-endian semantics for Wasm linear
+memory; JavaScript and tagged heap atomics retain native byte order, following
+the s390 backend distinction. Both unchanged upstream compare-exchange stress
+tests now pass. Optimized execution also passes 198,392 matrix checks across
+504 native functions, 372 official atomic specification commands, and the real
+16 MiB four-worker queue with lane contention, tearing, wait/notify, ordering
+and memory growth. The previous timeouts and byte-swapped matrix result remain
+preserved as negative controls. The extended fixtures explicitly verify the
+native compilation tier and preserve separate baseline/optimizing evidence.
+
+Final retained gates on the atomic-endian build: 6,062 Node cases (5,832 broad,
+137 addon and 93 native cases, retaining upstream skips), 6,544 JavaScript
+regressions, 281 C++ tests, all JSPI/scalar/atomic regressions, snapshot/cache
+checks, three native RegExp profiles, npm/TypeScript/ESLint workflows and the
+optimized two-minute application soak. The complete inherited audit chain and
+the immutable Wasm, atomics, scalar and JSPI parents verify successfully.
+
+
+Node feature completion work (2026-10-30)
+---------------------------------------
+
+The sparc64-node-features branch extends verified production checkpoint
+node-wasm-production-20261029T234057.721541Z. The production parent is preserved.
+Amaro, Temporal and FFI are enabled together in the validated Release build,
+with Sparkplug, TurboFan, production Wasm, snapshots/cache and heap-verification
+support. The combined feature and full inherited regression audits pass on T7.
+
+Amaro passes all 39 relevant unchanged upstream Node tests without skips.
+Its bundled Wasm parser passes 195 checks/99 calls in each native compiler tier,
+including Unicode, generics, diagnostics and a 96 KB source file. A direct
+TypeScript HTTP/fetch application with four TypeScript workers passes with cold
+and warm compile caches; the immutable parent remains a negative control.
+
+Temporal passes all three relevant Node cases and 13,056 pinned Test262
+executions from 6,534 source files, retaining upstream expectations. Oslo DST
+scheduling passes in the main isolate and four workers, normally and under
+heap-verifying compaction. The original native Rust archive is unchanged.
+A separate archive makes 56 overlapping weak C math symbols private, preventing
+Rust's fallbacks from replacing platform libm and leaving signaling NaNs
+unquieted. All 258 production Wasm specifications pass in each of the baseline,
+optimizing and default modes with upstream expectations retained.
+
+FFI supports native calls, callbacks and memory access, with an integer/pointer
+fast-call trampoline for up to eight user arguments. Other signatures retain
+libffi invocation. The standalone trampoline probe passes 135 ABI checks;
+128 optimized native calls verify JIT return addresses, eight-argument ABI,
+public-wrapper execution, GC and library closure, with FastApiCall graphs.
+The separate shared-buffer body passes all 31 checks and the endian-corrected
+seccomp fixture verifies executable-memory denial. Upstream FFI tests remain
+unchanged: their BE skip guards and obsolete disabled-path arity expectation
+are recorded explicitly, alongside separately derived passing controls.
+
+Outgoing C argument slots are now included in V8's stack accounting so gap-move
+temporaries cannot overwrite them. --v8-enable-verify-heap persists verification
+support in config.gypi; a configure/regeneration control checks identical actual
+compiler definitions, and the build helper rejects a missing VERIFY_HEAP.
+Bundled libffi uses the SPARC PC-relative unwind encoding verified by the
+native assembler/linker probe.
+
+Retained validation includes 6,063 Node cases (5,833 broad, 137 addons and 93
+native, with upstream skips retained), 6,544 JavaScript regressions, 281 C++
+cases, all JSPI/scalar/atomic regressions, 46 Wasm inspector cases, optimization,
+deoptimization/inlining, snapshot/cache, native RegExp, npm/TypeScript/ESLint
+and the optimized two-minute application soak. The inherited instance-gc test
+still assumes host little endian: its original failure is retained and a
+separate DataView little-endian copy passes all three native compiler modes.
+
+Reproduction and checkpoint tools:
+  python3 tools/sparc64/build-node-features.py --stage all
+  python3 tools/sparc64/prepare-node-features-acceptance.py
+  python3 tools/sparc64/build-wasm-production-inspector.py --label production-atomic-endian
+  python3 tools/sparc64/validate-wasm-production.py --stage prep --label production-atomic-endian
+  python3 tools/sparc64/validate-node-features.py --label features-isolated
+  python3 tools/sparc64/validate-wasm-production.py --stage optimizer-regressions --label production-atomic-endian
+  python3 tools/sparc64/validate-wasm-production.py --stage features --label production-atomic-endian
+  python3 tools/sparc64/validate-wasm-production.py --stage regressions --label production-atomic-endian
+  python3 tools/sparc64/audit-node-features.py
+  python3 tools/sparc64/checkpoint.py --profile node-features
+
+finish-node-features-validation.py can wait on a specific live build PID and
+run the ordered acceptance sequence. Preserve earlier attempts before reusing
+labels. Never sync compiled sources during a live Make. Checkpoint verification
+checks every artifact and source-overlay member; verify-checkpoint.py also
+checks the current source tree when --source-root is supplied. No commit, push
+or upstream publication has been performed.

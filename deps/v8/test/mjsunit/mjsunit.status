@@ -572,6 +572,8 @@
 
 ##############################################################################
 ['not has_webassembly', {
+  'compiler/fast-api-calls-throw': [SKIP],
+  'regress/regress-447206453': [SKIP],
   # This test case requires wasm. It is not in the regress/wasm subfolder
   # as we want to run this test in jitless mode (where it is supposed to pass).
   'regress/regress-366323504': [SKIP],
@@ -948,29 +950,6 @@
   'regexp-tier-up-multiple': [SKIP],
   'regress/regress-996234': [SKIP],
 
-  # These tests rely on TurboFan being enabled.
-  'compiler/call-with-arraylike-or-spread*': [SKIP],
-  'compiler/fast-api-calls': [SKIP],
-  'compiler/fast-api-attributes': [SKIP],
-  'compiler/fast-api-interface-types': [SKIP],
-  'compiler/fast-api-deopt': [SKIP],
-  'compiler/regress-crbug-1201011': [SKIP],
-  'compiler/regress-crbug-1201057': [SKIP],
-  'compiler/regress-crbug-1201082': [SKIP],
-  'compiler/regress-331909453': [SKIP],
-  'compiler/regress-crbug-1457532': [SKIP],
-  'regress/regress-390675705': [SKIP],
-  'regress/regress-395028748': [SKIP],
-  'regress/regress-424627229': [SKIP],
-  'regress/regress-438321229': [SKIP],
-
-  'wasm/fast-api-calls-with-wellknown-imports*': [SKIP],
-  'regress/wasm/regress-368086282': [SKIP],
-  'regress/wasm/regress-438770394': [SKIP],
-
-  'maglev/extras-cped': [SKIP],
-  'turboshaft/extras-cped': [SKIP],
-
   # These tests check that we can trace the compiler.
   'tools/compiler-trace-flags': [SKIP],
 
@@ -995,6 +974,49 @@
 }],  # 'lite_mode or variant == jitless'
 
 ##############################################################################
+['not has_turbofan or lite_mode or variant == jitless', {
+  # These tests rely on TurboFan being enabled.
+  'compiler/call-with-arraylike-or-spread*': [SKIP],
+  'compiler/fast-api-calls': [SKIP],
+  'compiler/fast-api-attributes': [SKIP],
+  'compiler/fast-api-interface-types': [SKIP],
+  'compiler/fast-api-deopt': [SKIP],
+  'compiler/regress-crbug-1201011': [SKIP],
+  'compiler/regress-crbug-1201057': [SKIP],
+  'compiler/regress-crbug-1201082': [SKIP],
+  'compiler/regress-331909453': [SKIP],
+  'compiler/regress-crbug-1457532': [SKIP],
+  'regress/regress-390675705': [SKIP],
+  'regress/regress-395028748': [SKIP],
+  'regress/regress-424627229': [SKIP],
+  'regress/regress-438321229': [SKIP],
+
+  'wasm/fast-api-calls-with-wellknown-imports*': [SKIP],
+  'regress/wasm/regress-368086282': [SKIP],
+  'regress/wasm/regress-438770394': [SKIP],
+
+  'maglev/extras-cped': [SKIP],
+  'turboshaft/extras-cped': [SKIP],
+
+  # Turbolev requires an optimizing compiler.
+  'turbolev/*': [SKIP],
+  'regress-376701117': [SKIP],
+  'regress-409911706': [SKIP],
+}],
+
+['not temporal', {
+  'regress/regress-463593768': [SKIP],
+  'regress/regress-464961493': [SKIP],
+}],
+
+['arch == sparc64', {
+  # Flush-to-zero is not supported by the SPARC64 FPU helper.
+  'd8/flush-denormals-flag': [SKIP],
+  'd8/flush-denormals-helper': [SKIP],
+  'd8/flush-denormals-worker': [SKIP],
+  'wasm/denormals': [SKIP],
+}],
+
 ['not i18n', {
   # Case-insensitive unicode regexp relies on case mapping provided by ICU.
   'es6/unicode-regexp-ignore-case': [FAIL],
@@ -2453,7 +2475,7 @@
 
 ##############################################################################
 # TODO(v8:11421): Port baseline compiler to other architectures.
-['arch not in (x64, arm64, ia32, arm, mips64el, loong64, s390x, riscv64, riscv32) or (arch == s390x and pointer_compression)', {
+['arch not in (x64, arm64, ia32, arm, mips64el, loong64, s390x, riscv64, riscv32, sparc64) or (arch == s390x and pointer_compression)', {
   'baseline/*': [SKIP],
   'regress/regress-1242306': [SKIP],
 }],

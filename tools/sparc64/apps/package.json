@@ -1,0 +1,10 @@
+{
+  "name": "sparc64-node-application-smoke",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "express": "^5.0.0",
+    "http-server": "^14.0.0",
+    "ws": "^8.0.0"
+  }
+}

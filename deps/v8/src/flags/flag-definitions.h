@@ -295,8 +295,8 @@ DEFINE_BOOL(js_shipping, true, "enable all shipped JavaScript features")
 // features. Use the JAVASCRIPT macros instead.
 //
 // TODO(v8:14214): Remove --harmony flags once transition is complete.
-#define HARMONY_INPROGRESS_BASE(V)                                             \
-  V(harmony_shadow_realm, "harmony ShadowRealm")                               \
+#define HARMONY_INPROGRESS_BASE(V)               \
+  V(harmony_shadow_realm, "harmony ShadowRealm") \
   V(harmony_struct, "harmony structs, shared structs, and shared arrays")
 
 #define JAVASCRIPT_INPROGRESS_FEATURES_BASE(V)       \
@@ -336,19 +336,19 @@ DEFINE_BOOL(js_shipping, true, "enable all shipped JavaScript features")
   V(harmony_import_attributes, "harmony import attributes") \
   V(harmony_temporal, "Temporal")
 
-#define JAVASCRIPT_SHIPPING_FEATURES_BASE(V)                                 \
-  V(js_regexp_duplicate_named_groups, "RegExp duplicate named groups")       \
-  V(js_regexp_modifiers, "RegExp modifiers")                                 \
-  V(js_promise_try, "Promise.try")                                           \
-  V(js_atomics_pause, "Atomics.pause")                                       \
-  V(js_error_iserror, "Error.isError")                                       \
-  V(js_regexp_escape, "RegExp.escape")                                       \
-  V(js_explicit_resource_management, "explicit resource management")         \
-  V(js_base_64, "Uint8Array to/from base64 and hex")                         \
-  V(js_esm_ns_reexport,                                                      \
-    "Support diamond-importing re-expored namespaces "                       \
-    "(https://github.com/tc39/ecma262/pull/3715)")                           \
-  V(js_upsert, "upsert")                                                     \
+#define JAVASCRIPT_SHIPPING_FEATURES_BASE(V)                           \
+  V(js_regexp_duplicate_named_groups, "RegExp duplicate named groups") \
+  V(js_regexp_modifiers, "RegExp modifiers")                           \
+  V(js_promise_try, "Promise.try")                                     \
+  V(js_atomics_pause, "Atomics.pause")                                 \
+  V(js_error_iserror, "Error.isError")                                 \
+  V(js_regexp_escape, "RegExp.escape")                                 \
+  V(js_explicit_resource_management, "explicit resource management")   \
+  V(js_base_64, "Uint8Array to/from base64 and hex")                   \
+  V(js_esm_ns_reexport,                                                \
+    "Support diamond-importing re-expored namespaces "                 \
+    "(https://github.com/tc39/ecma262/pull/3715)")                     \
+  V(js_upsert, "upsert")                                               \
   V(js_iterator_sequencing, "iterator sequencing")
 
 #ifdef V8_INTL_SUPPORT
@@ -3969,7 +3969,7 @@ DEFINE_NEG_IMPLICATION(predictable, maglev_deopt_data_on_background)
 DEFINE_NEG_IMPLICATION(predictable, maglev_build_code_on_background)
 #endif  // V8_ENABLE_MAGLEV
 // Avoid random seeds in predictable mode.
-DEFINE_VALUE_IMPLICATION(predictable && random_seed == 0, random_seed, 12347)
+DEFINE_VALUE_IMPLICATION(predictable&& random_seed == 0, random_seed, 12347)
 
 DEFINE_BOOL(predictable_gc_schedule, false,
             "Predictable garbage collection schedule. Fixes heap growing, "

@@ -953,6 +953,7 @@ TIMEOUT_SCALEFACTOR = {
     'arm'       : { 'debug' :  8, 'release' : 3 }, # The ARM buildbots are slow.
     'riscv64'   : { 'debug' :  8, 'release' : 3 }, # The riscv devices are slow.
     'loong64'   : { 'debug' :  4, 'release' : 1 },
+    'sparc64'   : { 'debug' :  4, 'release' : 1 },
     'ia32'      : { 'debug' :  4, 'release' : 1 },
     'ppc'       : { 'debug' :  4, 'release' : 1 },
     's390'      : { 'debug' :  4, 'release' : 1 } }
