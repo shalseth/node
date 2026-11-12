@@ -38,11 +38,11 @@ hardware configuration as validated. The C/C++ build targets V9; no M7-specific
 compiler tuning is requested. V8 currently probes FPU support and cache-line
 sizes; the installed execution tests establish compatibility on each CPU.
 
-Sparkplug and TurboFan generate native JavaScript code. Wasm has Liftoff and
+Sparkplug, Maglev and TurboFan generate native JavaScript code. Wasm has Liftoff and
 optimizing compilation, including SIMD, GC and JSPI. SIMD operations currently
 use scalar SPARC instructions; SIMD support does not imply VIS acceleration.
 Native RegExp, workers, snapshots, TypeScript stripping, Temporal, and Node FFI
-are enabled together. Maglev is disabled. Heap verification is compiled in and
+are enabled together. Heap verification is compiled in and
 can be requested with `--verify-heap`; normal runs do not enable stress flags.
 
 npm packages containing portable JavaScript can be installed normally. Packages

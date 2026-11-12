@@ -1138,7 +1138,7 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
 
 namespace {
 
-void CallApiFunctionAndReturn(MacroAssembler* masm, Register function,
+void CallApiFunctionAndReturnImpl(MacroAssembler* masm, Register function,
                               int c_argc, ExternalReference thunk,
                               bool with_profiling, int slots_to_drop,
                               const MemOperand* argc_slot,
@@ -1228,6 +1228,23 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, Register function,
 
 }  // namespace
 
+#ifdef V8_ENABLE_MAGLEV
+void CallApiFunctionAndReturn(MacroAssembler* masm, bool with_profiling,
+                              Register function_address,
+                              ExternalReference thunk_ref, Register thunk_arg,
+                              int slots_to_drop_on_return,
+                              MemOperand* argc_operand,
+                              MemOperand return_value_operand,
+                              bool handle_interceptor_result) {
+  CHECK(!with_profiling);
+  CHECK(!thunk_arg.is_valid());
+  CallApiFunctionAndReturnImpl(masm, function_address, 1, thunk_ref,
+                               with_profiling, slots_to_drop_on_return,
+                               argc_operand, return_value_operand,
+                               handle_interceptor_result);
+}
+#endif
+
 void Builtins::Generate_CallApiCallbackImpl(MacroAssembler* masm,
                                             CallApiCallbackMode mode) {
   using FC = ApiCallbackExitFrameConstants;
@@ -1267,7 +1284,7 @@ void Builtins::Generate_CallApiCallbackImpl(MacroAssembler* masm,
   MemOperand argc_slot(fp, FC::kFCIArgcOffset);
   masm->StoreU64(argc, argc_slot);
   masm->LoadAddress(o0, MemOperand(fp, FC::kFunctionCallbackInfoOffset));
-  CallApiFunctionAndReturn(
+  CallApiFunctionAndReturnImpl(
       masm, function, 1, ExternalReference::invoke_function_callback(mode),
       mode != CallApiCallbackMode::kOptimizedNoProfiling,
       FC::kFunctionCallbackInfoApiArgsLength + kJSArgcReceiverSlots, &argc_slot,
@@ -1321,7 +1338,7 @@ void Builtins::Generate_CallApiAccessorImpl(MacroAssembler* masm,
     masm->LoadU64(callback,
                   FieldMemOperand(callback, AccessorInfo::kGetterOffset));
   }
-  CallApiFunctionAndReturn(
+  CallApiFunctionAndReturnImpl(
       masm, callback, for_setter ? 3 : 2, thunk, true,
       for_setter ? FC::kPropertyCallbackInfoSetterApiArgsLength
                  : FC::kPropertyCallbackInfoGetterApiArgsLength,
@@ -2317,6 +2334,21 @@ void Builtins::Generate_WasmCompileLazy(MacroAssembler* masm) {
   masm->add(g5, g1, g5);
   masm->LeaveFrame(StackFrame::INTERNAL);
   masm->Jump(g5);
+}
+#endif
+
+#ifdef V8_ENABLE_MAGLEV
+void Builtins::Generate_MaglevFunctionEntryStackCheck(MacroAssembler* masm,
+                                                       bool save_new_target) {
+  {
+    FrameScope scope(masm, StackFrame::INTERNAL);
+    masm->AssertSmi(kReturnRegister0);
+    if (save_new_target) masm->Push(kJavaScriptCallNewTargetRegister);
+    masm->Push(kReturnRegister0);
+    masm->CallRuntime(Runtime::kStackGuardWithGap, 1);
+    if (save_new_target) masm->Pop(kJavaScriptCallNewTargetRegister);
+  }
+  masm->Ret();
 }
 #endif
 

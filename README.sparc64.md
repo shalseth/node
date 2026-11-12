@@ -9,10 +9,10 @@ Node.js installation is not needed.** On Gentoo, use the source-only
 [`net-libs/nodejs-9999` ebuild](https://github.com/shalseth/gentoo-sparc64#installing-nodejs).
 It fetches this Git branch; it does not download a prebuilt Node package.
 
-Native execution supports Sparkplug, TurboFan, native RegExp, Liftoff and
+Native execution supports Sparkplug, Maglev, TurboFan, native RegExp, Liftoff and
 optimizing Wasm, including production SIMD, GC and JSPI. npm/npx, native addons,
 workers, TypeScript stripping, Temporal, FFI, snapshots and code caches are
-enabled together. Maglev is disabled. SIMD uses scalar SPARC lowering rather
+enabled together. SIMD uses scalar SPARC lowering rather
 than VIS acceleration. Other FFI signatures use libffi when no fast path applies.
 
 Validated hardware is SPARC T4 and M7/T7 on glibc Linux. Initial native validation
@@ -32,6 +32,12 @@ The baseline passed broad Node/V8 regressions, Temporal Test262, native ABI/FFI,
 Wasm specifications in three modes, inspector/deoptimization, npm workflows and
 bounded real-application soaks. These are evidence for that recorded baseline;
 they do not certify every future live-branch commit or every npm package.
+
+Maglev validation on 2026-11-12 passed 532 upstream cases in both the default
+and `stress_maglev_no_turbofan` variants on T7, plus all 281 native C++ tests.
+The Maglev execution and GC probe passed on T7 in Node and on T4 in `d8`.
+The broader V8 run passed 7,874 of 7,880 cases; its six Wasm failures also
+reproduce with the preceding non-Maglev binary.
 
 For native builds, upstream merges and validation, follow
 [doc/sparc64-maintenance.md](doc/sparc64-maintenance.md). Historical bring-up

@@ -29,6 +29,8 @@
 #include "src/maglev/x64/maglev-assembler-x64-inl.h"
 #elif V8_TARGET_ARCH_S390X
 #include "src/maglev/s390/maglev-assembler-s390-inl.h"
+#elif V8_TARGET_ARCH_SPARC64
+#include "src/maglev/sparc64/maglev-assembler-sparc64-inl.h"
 #elif V8_TARGET_ARCH_PPC64
 #include "src/maglev/ppc/maglev-assembler-ppc-inl.h"
 #elif V8_TARGET_ARCH_LOONG64

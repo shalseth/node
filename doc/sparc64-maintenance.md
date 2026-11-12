@@ -91,12 +91,36 @@ For a source archive without Git metadata, use the ordinary build directly:
 sh tools/sparc64/configure-node-features.sh all \
   --prefix=/usr --use-prefix-to-find-headers
 CARGO_NET_OFFLINE=true CCACHE_DISABLE=1 make -j96
-python3 tools/sparc64/write-test-config.py --allow-turbofan --allow-webassembly
+python3 tools/sparc64/write-test-config.py --allow-turbofan --allow-webassembly --allow-maglev
 ```
 
-`--v8-enable-verify-heap` must persist across GYP regeneration. Keep Maglev off
-until its backend is implemented and validated. The build makes its own native
+`--v8-enable-verify-heap` must persist across GYP regeneration. Sparkplug, Maglev
+and TurboFan are enabled together. The build makes its own native
 snapshot/compiler tools; no existing Node binary is used as a bootstrap.
+
+Verify Maglev execution, overflow deoptimization, unaligned access and GC with:
+
+```sh
+out/Release/node --allow-natives-syntax --maglev --no-turbofan \
+  --no-concurrent-recompilation --expose-gc --verify-heap \
+  tools/sparc64/test-maglev.js
+sparc_build_root=$PWD
+for variant in default stress_maglev_no_turbofan; do
+  (cd deps/v8 && python3 tools/run-tests.py \
+    --outdir="$sparc_build_root/out/Release" --variants="$variant" \
+    --no-presubmit --rerun-failures-count=0 -j16 'mjsunit/maglev/*')
+done
+```
+
+The 2026-11-12 T7 validation passed all 532 cases in each variant, all 281 C++
+tests, and the Node API, TypeScript, Temporal and both-tier Wasm SIMD/GC/JSPI
+checks. The same Maglev probe passed with heap verification on T4 in `d8`.
+The full default V8 run passed 7,874 of 7,880 cases. The six failures reproduce
+with the preceding non-Maglev 26.13.1 binary: Wasm regressions `1032753`,
+`347914831`, `368086282`, `421055121`, `455832038` and `473272199`.
+
+The optional Maglev `--deopt-every-n-times` stress hook is not implemented on
+SPARC64. Normal eager/lazy deoptimization and OSR are covered by the tests above.
 
 The historical `build-node-features.py`, `build-release-candidate.py` and
 checkpoint audit-chain drivers authenticate earlier uncommitted worktrees and

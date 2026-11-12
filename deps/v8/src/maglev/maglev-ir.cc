@@ -7660,8 +7660,13 @@ void AttemptOnStackReplacement(MaglevAssembler* masm,
                   *no_code_for_osr);
 
     // If tiering is already in progress wait.
-    __ LoadByte(scratch1,
-                FieldMemOperand(scratch0, FeedbackVector::kFlagsOffset));
+#if V8_TARGET_BIG_ENDIAN
+    constexpr int kTieringFlagsOffset =
+        FeedbackVector::kFlagsOffset + kUInt16Size - 1;
+#else
+    constexpr int kTieringFlagsOffset = FeedbackVector::kFlagsOffset;
+#endif
+    __ LoadByte(scratch1, FieldMemOperand(scratch0, kTieringFlagsOffset));
     __ DecodeField<FeedbackVector::OsrTieringInProgressBit>(scratch1);
     __ JumpIfByte(kNotEqual, scratch1, 0, *no_code_for_osr);
 

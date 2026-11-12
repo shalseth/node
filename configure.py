@@ -56,7 +56,7 @@ valid_mips_fpu = ('fp32', 'fp64', 'fpxx')
 valid_mips_float_abi = ('soft', 'hard')
 valid_intl_modes = ('none', 'small-icu', 'full-icu', 'system-icu')
 icu_versions = json.loads((tools_path / 'icu' / 'icu_versions.json').read_text(encoding='utf-8'))
-maglev_enabled_architectures = ('x64', 'arm', 'arm64', 'ppc64', 's390x', 'riscv64')
+maglev_enabled_architectures = ('x64', 'arm', 'arm64', 'ppc64', 's390x', 'riscv64', 'sparc64')
 
 # builtins may be removed later if they have been disabled by options
 shareable_builtins = {'undici/undici': 'deps/undici/undici.js',

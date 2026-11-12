@@ -100,8 +100,15 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
       : MacroAssembler(isolate, zone, CodeObjectRequired::kNo),
         code_gen_state_(code_gen_state) {}
 
+#if defined(V8_TARGET_ARCH_SPARC64) && defined(V8_ENABLE_MAGLEV)
+  void Assert(Condition condition, AbortReason reason) {
+    if (v8_flags.debug_code) Check(condition, reason);
+  }
+#endif
   static constexpr RegList GetAllocatableRegisters() {
-#if defined(V8_TARGET_ARCH_ARM)
+#if defined(V8_TARGET_ARCH_SPARC64)
+    return kAllocatableGeneralRegisters - i3 - i4 - i5;
+#elif defined(V8_TARGET_ARCH_ARM)
     return kAllocatableGeneralRegisters - kMaglevExtraScratchRegister;
 #elif defined(V8_TARGET_ARCH_RISCV64)
     return kAllocatableGeneralRegisters - kMaglevExtraScratchRegister -
@@ -118,7 +125,11 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
 #endif  // V8_TARGET_ARCH_RISCV64 || V8_TARGET_ARCH_LOONG64
 
   static constexpr DoubleRegList GetAllocatableDoubleRegisters() {
+#if defined(V8_TARGET_ARCH_SPARC64)
+    return kAllocatableDoubleRegisters - d13 - d14;
+#else
     return kAllocatableDoubleRegisters;
+#endif
   }
 
   inline MemOperand GetStackSlot(const compiler::AllocatedOperand& operand);

@@ -9,6 +9,9 @@
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/codegen/register-configuration.h"
+#ifdef V8_ENABLE_MAGLEV
+#include "src/compiler/backend/sparc64/code-generator-sparc64-inl.h"
+#endif
 #include "src/execution/frames.h"
 #include "src/execution/isolate-data.h"
 #include "src/heap/memory-chunk.h"
@@ -16,6 +19,9 @@
 #include "src/numbers/conversions-inl.h"
 #include "src/objects/contexts.h"
 #include "src/objects/fixed-array.h"
+#include "src/objects/feedback-vector.h"
+#include "src/objects/code.h"
+#include "src/objects/maybe-object.h"
 #include "src/objects/js-function.h"
 #include "src/objects/map.h"
 #include "src/objects/shared-function-info.h"
@@ -135,6 +141,12 @@ void MacroAssembler::SubS64(Register dst, Register src, intptr_t value) {
 
 MemOperand MacroAssembler::ResolveAddress(MemOperand operand,
                                           Register exclude) {
+  if (operand.index().is_valid()) {
+    Register scratch = Scratch(operand.base(), operand.index(), exclude);
+    add(scratch, operand.base(), operand.index());
+    AddS64(scratch, scratch, operand.offset());
+    return MemOperand(scratch);
+  }
   if (IsSimm13(operand.offset())) return operand;
   Register scratch = Scratch(operand.base(), exclude);
   Move(scratch, operand.offset());
@@ -207,6 +219,11 @@ void MacroAssembler::MovDoubleToInt64(Register dst, DoubleRegister src) {
 }
 
 void MacroAssembler::LoadAddress(Register dst, MemOperand src) {
+  if (src.index().is_valid()) {
+    add(dst, src.base(), src.index());
+    AddS64(dst, dst, src.offset());
+    return;
+  }
   if (IsSimm13(src.offset())) {
     add(dst, src.base(), static_cast<int32_t>(src.offset()));
   } else if (dst != src.base()) {
@@ -1174,5 +1191,275 @@ void MacroAssembler::LoadFromConstantsTable(Register dst, int constant_index) {
   LoadU64(dst,
           FieldMemOperand(dst, FixedArray::OffsetOfElementAt(constant_index)));
 }
+
+#ifdef V8_ENABLE_MAGLEV
+void MacroAssembler::BranchCondition(Condition condition, Label* target) {
+  Label skip;
+  if (float_condition_) {
+    FloatCondition cc;
+    switch (condition) {
+      case equal:
+        cc = kFEqual;
+        break;
+      case not_equal:
+        cc = kFNotEqual;
+        break;
+      case less:
+      case less_unsigned:
+        cc = kFLess;
+        break;
+      case less_equal:
+      case less_equal_unsigned:
+        cc = kFLessOrEqual;
+        break;
+      case greater:
+      case greater_unsigned:
+        cc = kFGreater;
+        break;
+      case greater_equal:
+      case greater_equal_unsigned:
+        cc = kFGreaterOrEqual;
+        break;
+      case overflow:
+        cc = kFUnordered;
+        break;
+      case no_overflow:
+        cc = kFOrdered;
+        break;
+      case always:
+        Jump(target);
+        return;
+      case never:
+        return;
+      default:
+        UNREACHABLE();
+    }
+    fb(static_cast<FloatCondition>(cc ^ 8), 0, &skip);
+  } else {
+    Assembler::b(NegateCondition(condition), condition_codes_, &skip);
+  }
+  nop();
+  Jump(target);
+  bind(&skip);
+}
+
+void MacroAssembler::PushAll(RegList registers) {
+  for (Register reg : registers) Push(reg);
+}
+void MacroAssembler::PopAll(RegList registers) {
+  for (Register reg : base::Reversed(registers)) Pop(reg);
+}
+void MacroAssembler::PushAll(DoubleRegList registers, int size) {
+  DCHECK_EQ(size, kDoubleSize);
+  for (DoubleRegister reg : base::Reversed(registers)) {
+    AllocateStackSpace(kDoubleSize);
+    StoreF64(reg, MemOperand(sp));
+  }
+}
+void MacroAssembler::PopAll(DoubleRegList registers, int size) {
+  DCHECK_EQ(size, kDoubleSize);
+  for (DoubleRegister reg : registers) {
+    LoadF64(reg, MemOperand(sp));
+    Drop(1);
+  }
+}
+void MacroAssembler::CompareRoot(Register value, RootIndex root) {
+  Register scratch = Scratch(value);
+  LoadRoot(scratch, root);
+  CmpU64(value, scratch);
+}
+void MacroAssembler::LoadStackLimit(Register dst, StackLimitKind kind) {
+  int offset = kind == StackLimitKind::kRealStackLimit
+                   ? IsolateData::real_jslimit_offset()
+                   : IsolateData::jslimit_offset();
+  LoadU64(dst, MemOperand(kRootRegister, offset));
+}
+void MacroAssembler::Check(Condition condition, AbortReason reason) {
+  Label done;
+  BranchCondition(condition, &done);
+  Abort(reason);
+  bind(&done);
+}
+void MacroAssembler::AssertSmi(Register value) {
+  if (!v8_flags.debug_code) return;
+  andcc(g0, value, kSmiTagMask);
+  condition_codes_ = ConditionCodes::kXcc;
+  float_condition_ = false;
+  Check(equal, AbortReason::kOperandIsNotASmi);
+}
+void MacroAssembler::AssertNotSmi(Register value) {
+  if (!v8_flags.debug_code) return;
+  andcc(g0, value, kSmiTagMask);
+  condition_codes_ = ConditionCodes::kXcc;
+  float_condition_ = false;
+  Check(not_equal, AbortReason::kOperandIsASmi);
+}
+void MacroAssembler::AssertZeroExtended(Register value) {
+  if (!v8_flags.debug_code) return;
+  Register scratch = Scratch(value);
+  srlx(scratch, value, 32);
+  CmpU64(scratch, Operand(0));
+  Check(equal, AbortReason::kUnexpectedValue);
+}
+void MacroAssembler::AssertNotDeoptimized(Register scratch) {
+  if (!v8_flags.debug_code) return;
+  const int offset =
+      InstructionStream::kCodeOffset - InstructionStream::kHeaderSize;
+  LoadU64(scratch, MemOperand(kJavaScriptCallCodeStartRegister, offset));
+  LoadU32(scratch, FieldMemOperand(scratch, Code::kFlagsOffset));
+  And(scratch, Operand(uint32_t{1} << Code::kMarkedForDeoptimizationBit));
+  CmpU32(scratch, Operand(0));
+  Check(equal, AbortReason::kInvalidDeoptimizedCode);
+}
+
+template <bool>
+void MacroAssembler::CompareObjectType(Register object, Register map,
+                                       Register type, InstanceType expected) {
+  LoadMap(map, object);
+  LoadU16(type, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  CmpU32(type, Operand(expected));
+}
+template void MacroAssembler::CompareObjectType<false>(Register, Register,
+                                                       Register, InstanceType);
+template void MacroAssembler::CompareObjectType<true>(Register, Register,
+                                                      Register, InstanceType);
+void MacroAssembler::CompareObjectTypeRange(Register object, Register map,
+                                            Register type, Register scratch,
+                                            InstanceType first,
+                                            InstanceType last) {
+  LoadMap(map, object);
+  LoadU16(type, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  SubS32(scratch, type, Operand(first));
+  CmpU32(scratch, Operand(last - first));
+}
+void MacroAssembler::ConvertIntToDouble(DoubleRegister dst, Register src) {
+  sra(g1, src, 0);
+  ConvertInt64ToDouble(dst, g1);
+}
+void MacroAssembler::ConvertUnsignedIntToDouble(DoubleRegister dst,
+                                                Register src) {
+  srl(g1, src, 0);
+  ConvertInt64ToDouble(dst, g1);
+}
+void MacroAssembler::ConvertDoubleToInt32(Register dst, DoubleRegister src) {
+  compiler::EmitSparc64FloatToInteger(this, dst, no_reg, src, true, false,
+                                      false);
+}
+void MacroAssembler::ConvertDoubleToUnsignedInt32(Register dst,
+                                                  DoubleRegister src) {
+  compiler::EmitSparc64FloatToInteger(this, dst, no_reg, src, true, true,
+                                      false);
+}
+void MacroAssembler::CountLeadingZerosU32(Register dst, Register src) {
+  compiler::EmitSparc64CountLeadingZeros(this, dst, src, true);
+}
+void MacroAssembler::CanonicalizeNaN(DoubleRegister dst, DoubleRegister src) {
+  compiler::EmitSparc64SilenceNaN(this, dst, src);
+}
+
+void MacroAssembler::DoubleMin(DoubleRegister dst, DoubleRegister lhs,
+                               DoubleRegister rhs) {
+  compiler::EmitSparc64FloatMinMax(this, dst, lhs, rhs, false, true);
+}
+void MacroAssembler::DoubleMax(DoubleRegister dst, DoubleRegister lhs,
+                               DoubleRegister rhs) {
+  compiler::EmitSparc64FloatMinMax(this, dst, lhs, rhs, false, false);
+}
+void MacroAssembler::ReverseBytes(Register value, int bytes) {
+  if (bytes == 2) {
+    srl(g1, value, 8);
+    and_(g1, g1, 255);
+    and_(g2, value, 255);
+    sll(g2, g2, 8);
+    or_(value, g1, g2);
+    LoadS16(value, value);
+  } else if (bytes == 4 || bytes == 8) {
+    compiler::EmitSparc64ReverseBytes(this, value, value, bytes);
+  } else {
+    DCHECK_EQ(bytes, 1);
+  }
+}
+void MacroAssembler::CompareInstanceType(Register map, Register type,
+                                         InstanceType expected) {
+  LoadU16(type, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  CmpU32(type, Operand(expected));
+}
+void MacroAssembler::CompareInstanceTypeRange(Register map, Register type,
+                                              Register scratch,
+                                              InstanceType first,
+                                              InstanceType last) {
+  LoadU16(type, FieldMemOperand(map, Map::kInstanceTypeOffset));
+  SubS32(scratch, type, Operand(first));
+  CmpU32(scratch, Operand(last - first));
+}
+
+void MacroAssembler::CheckPageFlag(Register object, Register scratch, int mask,
+                                   Condition cc, Label* target) {
+  srlx(scratch, object, kPageSizeBits);
+  sllx(scratch, scratch, kPageSizeBits);
+  LoadU64(scratch, MemOperand(scratch, MemoryChunk::FlagsOffset()));
+  And(scratch, Operand(mask));
+  BranchCondition(cc, target);
+}
+void MacroAssembler::CallRecordWriteStub(Register object, Register slot,
+                                         SaveFPRegsMode mode) {
+  DCHECK_EQ(object, WriteBarrierDescriptor::ObjectRegister());
+  DCHECK_EQ(slot, WriteBarrierDescriptor::SlotAddressRegister());
+  CallBuiltin(Builtins::RecordWrite(mode));
+}
+void MacroAssembler::AssertMap(Register object) {
+  if (!v8_flags.debug_code) return;
+  AssertNotSmi(object);
+  CompareObjectType(object, g1, g1, MAP_TYPE);
+  Check(equal, AbortReason::kUnexpectedValue);
+}
+void MacroAssembler::AssertFeedbackVector(Register object, Register scratch) {
+  if (!v8_flags.debug_code) return;
+  AssertNotSmi(object);
+  CompareObjectType(object, scratch, scratch, FEEDBACK_VECTOR_TYPE);
+  Check(equal, AbortReason::kUnexpectedValue);
+}
+void MacroAssembler::CallJSDispatchEntry(JSDispatchHandle handle,
+                                         uint16_t argument_count) {
+  CHECK_EQ(argument_count,
+           isolate()->js_dispatch_table().GetParameterCount(handle));
+  static_assert(!JSDispatchTable::kSupportsCompaction);
+  LoadLiteral(g1, handle.value(), RelocInfo::JS_DISPATCH_HANDLE);
+  srlx(g1, g1, kJSDispatchHandleShift);
+  sllx(g1, g1, kJSDispatchTableEntrySizeLog2);
+  LoadU64(g2, AsMemOperand(IsolateFieldId::kJSDispatchTable));
+  add(g2, g2, g1);
+  LoadU64(kJavaScriptCallCodeStartRegister,
+          MemOperand(g2, JSDispatchEntry::kEntrypointOffset));
+  Call(kJavaScriptCallCodeStartRegister);
+}
+void MacroAssembler::TryLoadOptimizedOsrCode(
+    Register result, CodeKind min_opt_level, Register feedback,
+    FeedbackSlot slot, Label* on_result, Label::Distance) {
+  Label fallthrough, clear;
+  LoadU64(result, FieldMemOperand(feedback, FeedbackVector::OffsetOfElementAt(
+                                                slot.ToInt())));
+  CmpU32(result, Operand(kClearedWeakHeapObjectLower32));
+  BranchCondition(equal, &fallthrough);
+  and_(result, result, ~static_cast<int32_t>(kWeakHeapObjectMask));
+  LoadU64(result, FieldMemOperand(result, CodeWrapper::kCodeOffset));
+  LoadU32(g5, FieldMemOperand(result, Code::kFlagsOffset));
+  And(g1, g5, Operand(uint32_t{1} << Code::kMarkedForDeoptimizationBit));
+  BranchCondition(not_equal, &clear);
+  if (min_opt_level == CodeKind::TURBOFAN_JS) {
+    And(g1, g5, Operand(uint32_t{1} << Code::kIsTurbofannedBit));
+    BranchCondition(not_equal, on_result);
+    Jump(&fallthrough);
+  } else {
+    Jump(on_result);
+  }
+  bind(&clear);
+  Move(result, kClearedWeakHeapObjectLower32);
+  StoreU64(result, FieldMemOperand(feedback, FeedbackVector::OffsetOfElementAt(
+                                                 slot.ToInt())));
+  bind(&fallthrough);
+  Move(result, 0);
+}
+#endif
 
 }  // namespace v8::internal

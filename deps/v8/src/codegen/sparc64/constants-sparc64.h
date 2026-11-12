@@ -42,6 +42,8 @@ enum Condition : int {
   greater_equal_unsigned = 13,
   positive = 14,
   no_overflow = 15,
+  unordered = overflow,
+  ordered = no_overflow,
   kZero = equal,
   kNotZero = not_equal,
   kEqual = equal,
@@ -56,6 +58,10 @@ enum Condition : int {
   kUnsignedGreaterThanEqual = greater_equal_unsigned,
 
 };
+
+constexpr Condition NegateCondition(Condition cc) {
+  return static_cast<Condition>(static_cast<int>(cc) ^ 8);
+}
 
 enum class ConditionCodes { kIcc = 0, kXcc = 2 };
 

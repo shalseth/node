@@ -16,6 +16,7 @@ root = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--allow-turbofan', action='store_true')
 parser.add_argument('--allow-webassembly', action='store_true')
+parser.add_argument('--allow-maglev', action='store_true')
 args = parser.parse_args()
 variables = ast.literal_eval((root / 'config.gypi').read_text())['variables']
 make_path = root / 'out/tools/v8_gypfiles/v8_base_without_compiler.target.mk'
@@ -26,12 +27,12 @@ assert variables['target_arch'] == 'sparc64'
 assert 'NDEBUG' in defines and 'DEBUG' not in defines
 assert args.allow_turbofan == ('V8_ENABLE_TURBOFAN' in defines)
 assert args.allow_webassembly == ('V8_ENABLE_WEBASSEMBLY' in defines)
+assert args.allow_maglev == ('V8_ENABLE_MAGLEV' in defines)
 if 'V8_JITLESS' in defines:
     assert 'V8_LITE_MODE' in defines
 else:
     assert 'V8_ENABLE_SPARKPLUG' in defines
     assert 'V8_LITE_MODE' not in defines
-    assert 'V8_ENABLE_MAGLEV' not in defines
 text = (root / 'deps/v8/BUILD.gn').read_text()
 text = text.split('action("v8_dump_build_config") {', 1)[1].split('\n}', 1)[0]
 keys = re.findall(r'^    "([A-Za-z_][A-Za-z_0-9]*)=', text, re.M)

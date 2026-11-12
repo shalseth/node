@@ -54,7 +54,10 @@ commands = [
                    '--prefix=' + args.prefix, '--use-prefix-to-find-headers']),
     ('make', ['make', '-j' + str(args.jobs)]),
     ('test-metadata', ['python3', 'tools/sparc64/write-test-config.py',
-                       '--allow-turbofan', '--allow-webassembly']),
+                       '--allow-turbofan', '--allow-webassembly', '--allow-maglev']),
+    ('maglev-runtime', [str(root / 'out/Release/node'), '--allow-natives-syntax',
+                        '--maglev', '--no-turbofan', '--no-concurrent-recompilation',
+                        '--expose-gc', '--verify-heap', 'tools/sparc64/test-maglev.js']),
     ('runtime', [str(root / 'out/Release/node'), '-e',
         "const a=require('node:assert/strict');a.equal(process.arch,'sparc64');"
         "a.equal(require('node:os').endianness(),'BE');a.equal(process.features.typescript,'strip');"
@@ -78,7 +81,7 @@ config = ast.literal_eval((root / 'config.gypi').read_text())['variables']
 assert config['target_arch'] == 'sparc64'
 assert config['v8_enable_verify_heap'] == config['v8_enable_temporal_support'] == 1
 assert config['node_use_amaro'] == config['node_use_ffi'] == 'true'
-assert config['v8_enable_maglev'] == 0
+assert config['v8_enable_maglev'] == 1
 record.update(passed=True, configuration=config, binary_sha256={
     name: sha(root / 'out/Release' / name) for name in ['node', 'd8', 'cctest', 'node_mksnapshot']})
 save()
