@@ -38,7 +38,9 @@ void Deoptimizer::ZapCode(Address start, Address end, RelocIterator& it) {
     if (slot >= end) break;
     if (slot < cursor) continue;
     zap_until(slot);
-    cursor = slot + info->target_address_size_for_gc();
+    // LoadLiteral stores every GC relocation in an eight-byte slot, including
+    // the 32-bit JS dispatch handle in its low half.
+    cursor = slot + kSystemPointerSize;
   }
   zap_until(end);
   FlushInstructionCache(start, end - start);

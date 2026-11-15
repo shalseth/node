@@ -39,6 +39,13 @@ The Maglev execution and GC probe passed on T7 in Node and on T4 in `d8`.
 The broader V8 run passed 7,874 of 7,880 cases; its six Wasm failures also
 reproduce with the preceding non-Maglev binary.
 
+The 2026-11-15 correction preserves embedded dispatch handles when deoptimized
+code is zapped. The original SPARC zapping code preserved four bytes of an
+eight-byte literal; Maglev's dispatch calls exposed this as a GC crash during
+Portier startup. `mjsunit/maglev/regress-dispatch-handle-deopt-gc` reproduces the
+failure before the correction. All 533 Maglev tests passed afterward in both
+variants, along with all 281 native C++ tests.
+
 For native builds, upstream merges and validation, follow
 [doc/sparc64-maintenance.md](doc/sparc64-maintenance.md). Historical bring-up
 notes and checkpoint-specific drivers remain in

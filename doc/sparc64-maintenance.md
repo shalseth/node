@@ -122,6 +122,21 @@ with the preceding non-Maglev 26.13.1 binary: Wasm regressions `1032753`,
 The optional Maglev `--deopt-every-n-times` stress hook is not implemented on
 SPARC64. Normal eager/lazy deoptimization and OSR are covered by the tests above.
 
+Keep `mjsunit/maglev/regress-dispatch-handle-deopt-gc` in the Maglev gate. It
+invalidates a compiled caller, then collects garbage while that caller remains
+on the stack. SPARC GC relocations use eight-byte literals even for four-byte
+dispatch handles. Code zapping must preserve the whole literal. Preserving only
+the generic handle size overwrites its low half with `ta 1` (`0x91d02001`), which
+the collector then mistakes for a handle. This caused the 2026-11-15 Portier
+startup crashes. The regression failed three of three times before the fix and
+passed ten of ten times afterward with heap verification; both 533-case Maglev
+variants and all 281 native C++ tests passed.
+The corrected runtime image also passed 30 isolated Portier startups under its
+production UID and resource limits, each with health and kiosk requests. Both
+runtime and runner images passed the regression, Maglev/GC, Node API,
+TypeScript, Temporal and npm/npx checks; the runner additionally built and ran
+an offline native addon.
+
 The historical `build-node-features.py`, `build-release-candidate.py` and
 checkpoint audit-chain drivers authenticate earlier uncommitted worktrees and
 local parent manifests. Use them to reproduce those checkpoints with their
